@@ -170,6 +170,7 @@ export default function Home() {
             <Link href="/terms" className="hover:text-white">Terms</Link>
             <Link href="/privacy" className="hover:text-white">Privacy</Link>
             <Link href="/disclaimer" className="hover:text-white">Disclaimer</Link>
+            <Link href="/contact" className="hover:text-white text-yellow-500">Contact Us</Link>
           </div>
           <p className="max-w-md mx-auto mb-4">
             Funmo Tips is an informational platform. We do not accept bets.

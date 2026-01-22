@@ -17,20 +17,20 @@ const TIERS = [
     {
         id: "basic",
         name: "Basic Access",
-        price: 50,
+        price: 100,
         features: ["Limited predictions", "No correct scores", "Valid until 23:59 EAT"],
     },
     {
         id: "standard",
         name: "Standard Access",
-        price: 100,
+        price: 250,
         features: ["All match predictions", "Correct Scores", "Valid until 23:59 EAT"],
         recommended: true,
     },
     {
         id: "vip",
         name: "VIP Access",
-        price: 150,
+        price: 500,
         features: ["Early Access Tips", "Highest Confidence Only", "Direct Alerts", "Valid until 23:59 EAT"],
     },
 ];
