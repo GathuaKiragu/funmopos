@@ -21,6 +21,7 @@ export default function DashboardPage() {
     const [loadingFixtures, setLoadingFixtures] = useState(true);
 
     // Filter states
+    const [searchQuery, setSearchQuery] = useState("");
     const [selectedLeague, setSelectedLeague] = useState<string>("all");
     const [onlyHighConfidence, setOnlyHighConfidence] = useState(false);
     const [selectedType, setSelectedType] = useState<string>("all");
@@ -42,6 +43,16 @@ export default function DashboardPage() {
     }, [selectedDate, selectedSport]);
 
     const filteredFixtures = fixtures.filter(fixture => {
+        // Search filter
+        if (searchQuery) {
+            const query = searchQuery.toLowerCase();
+            const matchesSearch =
+                fixture.homeTeam.name.toLowerCase().includes(query) ||
+                fixture.awayTeam.name.toLowerCase().includes(query) ||
+                fixture.league.name.toLowerCase().includes(query);
+            if (!matchesSearch) return false;
+        }
+
         const matchesLeague = selectedLeague === "all" || fixture.league.name === selectedLeague;
         const matchesType = selectedType === "all" || fixture.prediction?.type === selectedType;
         const matchesConfidence = !onlyHighConfidence || (fixture.prediction?.confidence || 0) >= 70;
@@ -251,6 +262,30 @@ export default function DashboardPage() {
                     </div>
                 </div>
 
+                {/* Search Bar */}
+                <div className="relative mb-4">
+                    <input
+                        type="text"
+                        placeholder="Search teams or leagues..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 pl-10 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-yellow-500/50 transition-colors"
+                    />
+                    <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    {searchQuery && (
+                        <button
+                            onClick={() => setSearchQuery("")}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    )}
+                </div>
+
                 {/* Filter Row */}
                 <div className="flex flex-wrap items-center gap-4 py-4 border-t border-white/5">
                     <div className="flex items-center gap-2">
@@ -290,6 +325,14 @@ export default function DashboardPage() {
                         />
                         <span className="text-xs font-bold text-gray-400 group-hover:text-white transition-colors">70%+ Confidence Only</span>
                     </label>
+
+                    <div className="ml-auto flex items-center gap-2 text-xs">
+                        <span className="text-gray-500">Showing</span>
+                        <span className="font-bold text-yellow-500">{filteredFixtures.length}</span>
+                        <span className="text-gray-500">of</span>
+                        <span className="font-bold text-white">{fixtures.length}</span>
+                        <span className="text-gray-500">matches</span>
+                    </div>
                 </div>
             </div>
 
@@ -307,8 +350,25 @@ export default function DashboardPage() {
                 </div>
             ) : (
                 <div className="text-center py-24 bg-white/5 rounded-2xl border border-white/5 border-dashed">
-                    <p className="text-gray-500 mb-4 font-medium text-lg">No matches match your criteria for {format(selectedDate, "MMM dd")}.</p>
-                    <Button variant="link" onClick={() => { setSelectedLeague("all"); setOnlyHighConfidence(false); setSelectedType("all"); }} className="text-yellow-500 font-bold">
+                    <div className="mb-4">
+                        <svg className="w-16 h-16 mx-auto text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        <p className="text-gray-500 mb-2 font-medium text-lg">
+                            {searchQuery ? `No matches found for "${searchQuery}"` : `No matches match your criteria for ${format(selectedDate, "MMM dd")}`}
+                        </p>
+                        <p className="text-gray-600 text-sm mb-6">Try adjusting your filters or search terms</p>
+                    </div>
+                    <Button
+                        variant="link"
+                        onClick={() => {
+                            setSearchQuery("");
+                            setSelectedLeague("all");
+                            setOnlyHighConfidence(false);
+                            setSelectedType("all");
+                        }}
+                        className="text-yellow-500 font-bold"
+                    >
                         Clear all filters
                     </Button>
                 </div>
