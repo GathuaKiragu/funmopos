@@ -8,11 +8,10 @@ service cloud.firestore {
     }
     
     // Fixtures 
-    // DEV MODE: Allow any auth user to write (to simulate the caching mechanism working from the client)
-    // PROD: Only Admin or Cloud Functions should write
+    // PROD: Only Admin/Server should write. Clients only read.
     match /fixtures/{fixtureId} {
       allow read: if true;
-      allow write: if request.auth != null; 
+      allow write: if false; // Only manageable via Firebase Admin SDK or Server-Side routes
     }
 
     // Default deny

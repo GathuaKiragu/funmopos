@@ -5,7 +5,7 @@ import { useAccess } from "@/hooks/useAccess";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { getFixtures, Fixture, Sport } from "@/lib/api-football";
+import { getFixturesClient as getFixtures, Fixture, Sport } from "@/lib/api-football";
 import { format, addDays, isSameDay, subDays } from "date-fns";
 import { Trophy, Activity, Calendar as CalendarIcon, ChevronRight, ChevronLeft, Lock, AlertTriangle, CheckCircle } from "lucide-react";
 import { PaymentModal } from "@/components/payment-modal";
@@ -19,6 +19,11 @@ export default function DashboardPage() {
     const [selectedSport, setSelectedSport] = useState<Sport>("football");
     const [fixtures, setFixtures] = useState<Fixture[]>([]);
     const [loadingFixtures, setLoadingFixtures] = useState(true);
+
+    // Filter states
+    const [selectedLeague, setSelectedLeague] = useState<string>("all");
+    const [onlyHighConfidence, setOnlyHighConfidence] = useState(false);
+    const [selectedType, setSelectedType] = useState<string>("all");
 
     useEffect(() => {
         if (!authLoading && !user) {
@@ -35,6 +40,15 @@ export default function DashboardPage() {
         };
         loadData();
     }, [selectedDate, selectedSport]);
+
+    const filteredFixtures = fixtures.filter(fixture => {
+        const matchesLeague = selectedLeague === "all" || fixture.league.name === selectedLeague;
+        const matchesType = selectedType === "all" || fixture.prediction?.type === selectedType;
+        const matchesConfidence = !onlyHighConfidence || (fixture.prediction?.confidence || 0) >= 70;
+        return matchesLeague && matchesType && matchesConfidence;
+    });
+
+    const uniqueLeagues = Array.from(new Set(fixtures.map(f => f.league.name))).sort();
 
     if (authLoading || accessLoading) {
         return (
@@ -76,25 +90,32 @@ export default function DashboardPage() {
                 {/* Header */}
                 <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-2">
-                        {league.logo && <img src={league.logo} alt={league.name} className="w-4 h-4 object-contain" />}
-                        <span className="text-xs font-mono text-gray-400 uppercase truncate max-w-[120px]">{league.name}</span>
+                        {league.logo && <img src={league.logo} alt={league.name} className="w-6 h-6 object-contain" />}
+                        <span className="text-xs font-mono text-gray-400 uppercase truncate max-w-[150px]">{league.name}</span>
                     </div>
                     {hasPrediction && (
                         <span className={`text-xs font-bold px-2 py-1 rounded border ${style.border} ${style.bg} ${style.color}`}>
-                            {style.label}
+                            {confidence}%
                         </span>
                     )}
                 </div>
 
                 {/* Match Info */}
                 <div className={`mb-6 ${isLocked ? 'blur-sm select-none' : ''}`}>
-                    <div className="flex items-center justify-between gap-4 mb-2">
-                        <span className="text-lg font-bold text-right flex-1">{homeTeam.name}</span>
-                        <span className="text-gray-500 text-xs font-mono">VS</span>
-                        <span className="text-lg font-bold text-left flex-1">{awayTeam.name}</span>
+                    <div className="flex items-center justify-between gap-4 mb-3">
+                        <div className="flex-1 text-right">
+                            <span className="text-lg font-bold block">{homeTeam.name}</span>
+                        </div>
+                        <div className="flex flex-col items-center gap-1">
+                            <span className="text-gray-500 text-xs font-mono font-bold">VS</span>
+                            <span className="text-xs text-gray-600 font-mono">{format(new Date(date), "HH:mm")}</span>
+                        </div>
+                        <div className="flex-1 text-left">
+                            <span className="text-lg font-bold block">{awayTeam.name}</span>
+                        </div>
                     </div>
-                    <p className="text-xs text-center text-gray-500">
-                        {format(new Date(date), "HH:mm")} EAT
+                    <p className="text-xs text-center text-gray-500 font-medium">
+                        {format(new Date(date), "MMM dd, yyyy 'at' HH:mm")} EAT
                     </p>
                 </div>
 
@@ -184,48 +205,91 @@ export default function DashboardPage() {
             </div>
 
             {/* Sport & Date Selection Row */}
-            <div className="flex flex-col lg:flex-row gap-6 mb-8">
-                {/* Sport Selector */}
-                <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 shrink-0">
-                    <button
-                        onClick={() => setSelectedSport("football")}
-                        className={`px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${selectedSport === "football" ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'}`}
-                    >
-                        <Trophy className="w-4 h-4" /> Football
-                    </button>
-                    <button
-                        onClick={() => setSelectedSport("basketball")}
-                        className={`px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${selectedSport === "basketball" ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'}`}
-                    >
-                        <Activity className="w-4 h-4" /> Basketball
-                    </button>
+            <div className="flex flex-col gap-6 mb-8">
+                <div className="flex flex-col lg:flex-row gap-6 ">
+                    {/* Sport Selector */}
+                    <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 shrink-0">
+                        <button
+                            onClick={() => setSelectedSport("football")}
+                            className={`px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${selectedSport === "football" ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'}`}
+                        >
+                            <Trophy className="w-4 h-4" /> Football
+                        </button>
+                        <button
+                            onClick={() => setSelectedSport("basketball")}
+                            className={`px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${selectedSport === "basketball" ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'}`}
+                        >
+                            <Activity className="w-4 h-4" /> Basketball
+                        </button>
+                    </div>
+
+                    {/* Date Navigation */}
+                    <div className="flex-1 flex items-center justify-between gap-4 bg-white/5 p-4 rounded-xl border border-white/10">
+                        <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-2">
+                                <CalendarIcon className="w-5 h-5 text-yellow-500" />
+                                <span className="font-bold text-sm text-gray-300">Date:</span>
+                            </div>
+                            <input
+                                type="date"
+                                value={format(selectedDate, "yyyy-MM-dd")}
+                                onChange={handleDateChange}
+                                className="bg-black border border-white/20 rounded px-4 py-2 text-white font-mono text-sm focus:outline-none focus:border-yellow-500"
+                            />
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Button variant="ghost" size="sm" onClick={() => setSelectedDate(subDays(selectedDate, 1))} className="text-gray-400 hover:text-white">
+                                <ChevronLeft className="w-4 h-4" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => setSelectedDate(new Date())} className="text-yellow-500 hover:text-yellow-400 hover:bg-white/5 text-xs font-bold uppercase tracking-tighter">
+                                Today
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => setSelectedDate(addDays(selectedDate, 1))} className="text-gray-400 hover:text-white">
+                                <ChevronRight className="w-4 h-4" />
+                            </Button>
+                        </div>
+                    </div>
                 </div>
 
-                {/* Date Navigation */}
-                <div className="flex-1 flex items-center justify-between gap-4 bg-white/5 p-4 rounded-xl border border-white/10">
-                    <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-2">
-                            <CalendarIcon className="w-5 h-5 text-yellow-500" />
-                            <span className="font-bold text-sm text-gray-300">Date:</span>
-                        </div>
-                        <input
-                            type="date"
-                            value={format(selectedDate, "yyyy-MM-dd")}
-                            onChange={handleDateChange}
-                            className="bg-black border border-white/20 rounded px-4 py-2 text-white font-mono text-sm focus:outline-none focus:border-yellow-500"
-                        />
-                    </div>
+                {/* Filter Row */}
+                <div className="flex flex-wrap items-center gap-4 py-4 border-t border-white/5">
                     <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => setSelectedDate(subDays(selectedDate, 1))} className="text-gray-400 hover:text-white">
-                            <ChevronLeft className="w-4 h-4" />
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => setSelectedDate(new Date())} className="text-yellow-500 hover:text-yellow-400 hover:bg-white/5 text-xs font-bold uppercase tracking-tighter">
-                            Today
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => setSelectedDate(addDays(selectedDate, 1))} className="text-gray-400 hover:text-white">
-                            <ChevronRight className="w-4 h-4" />
-                        </Button>
+                        <span className="text-xs font-bold text-gray-500 uppercase">League:</span>
+                        <select
+                            value={selectedLeague}
+                            onChange={(e) => setSelectedLeague(e.target.value)}
+                            className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs font-semibold text-white focus:outline-none focus:border-yellow-500/50"
+                        >
+                            <option value="all">All Leagues</option>
+                            {uniqueLeagues.map(league => (
+                                <option key={league} value={league}>{league}</option>
+                            ))}
+                        </select>
                     </div>
+
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-gray-500 uppercase">Type:</span>
+                        <select
+                            value={selectedType}
+                            onChange={(e) => setSelectedType(e.target.value)}
+                            className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs font-semibold text-white focus:outline-none focus:border-yellow-500/50"
+                        >
+                            <option value="all">All Predictions</option>
+                            <option value="result">Match Result</option>
+                            <option value="goals">Goals/Totlas</option>
+                            <option value="score">Correct Score</option>
+                        </select>
+                    </div>
+
+                    <label className="flex items-center gap-2 cursor-pointer group ml-auto">
+                        <input
+                            type="checkbox"
+                            checked={onlyHighConfidence}
+                            onChange={(e) => setOnlyHighConfidence(e.target.checked)}
+                            className="w-4 h-4 rounded border-white/10 bg-white/5 text-yellow-500 focus:ring-0 focus:ring-offset-0"
+                        />
+                        <span className="text-xs font-bold text-gray-400 group-hover:text-white transition-colors">70%+ Confidence Only</span>
+                    </label>
                 </div>
             </div>
 
@@ -235,17 +299,17 @@ export default function DashboardPage() {
                     <Activity className="w-8 h-8 animate-spin mb-4 text-yellow-500" />
                     <p>Analyzing market data...</p>
                 </div>
-            ) : fixtures.length > 0 ? (
+            ) : filteredFixtures.length > 0 ? (
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {fixtures.map((fixture) => (
+                    {filteredFixtures.map((fixture) => (
                         <TipCard key={fixture.id} fixture={fixture} />
                     ))}
                 </div>
             ) : (
                 <div className="text-center py-24 bg-white/5 rounded-2xl border border-white/5 border-dashed">
-                    <p className="text-gray-500 mb-4 font-medium text-lg">No high-confidence {selectedSport} signals found for {format(selectedDate, "MMM dd")}.</p>
-                    <Button variant="link" onClick={() => setSelectedDate(new Date())} className="text-yellow-500 font-bold">
-                        Return to Today's Market
+                    <p className="text-gray-500 mb-4 font-medium text-lg">No matches match your criteria for {format(selectedDate, "MMM dd")}.</p>
+                    <Button variant="link" onClick={() => { setSelectedLeague("all"); setOnlyHighConfidence(false); setSelectedType("all"); }} className="text-yellow-500 font-bold">
+                        Clear all filters
                     </Button>
                 </div>
             )}

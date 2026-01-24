@@ -5,7 +5,7 @@ import { ArrowRight, ShieldCheck, Trophy, Activity, Lock, AlertTriangle, User as
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { useEffect, useState } from "react";
-import { getFixtures, Fixture, Sport } from "@/lib/api-football";
+import { getFixturesClient as getFixtures, Fixture, Sport } from "@/lib/api-football";
 
 export default function Home() {
   const { user } = useAuth();
