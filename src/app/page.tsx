@@ -4,9 +4,24 @@ import { Button } from "@/components/ui/button";
 import { ArrowRight, ShieldCheck, Trophy, Activity, Lock, AlertTriangle, User as UserIcon } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
+import { useEffect, useState } from "react";
+import { getFixtures, Fixture, Sport } from "@/lib/api-football";
 
 export default function Home() {
   const { user } = useAuth();
+  const [selectedSport, setSelectedSport] = useState<Sport>("football");
+  const [fixtures, setFixtures] = useState<Fixture[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadFixtures = async () => {
+      setLoading(true);
+      const data = await getFixtures(new Date(), selectedSport);
+      setFixtures(data.slice(0, 3)); // Just show top 3
+      setLoading(false);
+    };
+    loadFixtures();
+  }, [selectedSport]);
 
   return (
     <div className="min-h-screen bg-black text-foreground flex flex-col font-sans selection:bg-yellow-500/30">
@@ -103,36 +118,44 @@ export default function Home() {
             <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
               <div className="text-left max-w-md">
                 <h3 className="text-xl font-bold text-white mb-2">Today's Market Watch</h3>
-                <p className="text-sm text-gray-400">Our AI is currently analyzing 42 matches across 6 leagues. Here is a sample of high-confidence signals.</p>
+                <p className="text-sm text-gray-400 mb-6">Our AI is currently analyzing matches across multiple sports. Select a category to see high-confidence signals.</p>
+                <div className="flex bg-white/5 p-1 rounded-lg border border-white/10 w-fit">
+                  <button
+                    onClick={() => setSelectedSport("football")}
+                    className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${selectedSport === "football" ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'}`}
+                  >
+                    Football
+                  </button>
+                  <button
+                    onClick={() => setSelectedSport("basketball")}
+                    className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${selectedSport === "basketball" ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'}`}
+                  >
+                    Basketball
+                  </button>
+                </div>
               </div>
 
               <div className="w-full lg:w-auto flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {/* Free Signal */}
-                <Card
-                  league="Premier League"
-                  match="Arsenal vs Chelsea"
-                  prediction="Draw"
-                  confidence={32}
-                  status="free"
-                />
-
-                {/* Locked Signal */}
-                <Card
-                  league="La Liga"
-                  match="Real Madrid vs..."
-                  prediction="Correct Score"
-                  confidence={89}
-                  status="locked"
-                />
-
-                {/* No Bet Signal */}
-                <Card
-                  league="Serie A"
-                  match="Juventus vs Milan"
-                  prediction="NO BET"
-                  confidence={0}
-                  status="nobet"
-                />
+                {loading ? (
+                  <div className="col-span-full flex justify-center py-8">
+                    <Activity className="w-6 h-6 animate-spin text-yellow-500" />
+                  </div>
+                ) : fixtures.length > 0 ? (
+                  fixtures.map(fixture => (
+                    <Card
+                      key={fixture.id}
+                      league={fixture.league.name}
+                      match={`${fixture.homeTeam.name} vs ${fixture.awayTeam.name}`}
+                      prediction={fixture.prediction?.picked || "ANALYZING..."}
+                      confidence={fixture.prediction?.confidence || 0}
+                      status={fixture.prediction?.isRisky ? 'nobet' : (fixture.prediction?.requiresTier === 'free' ? 'free' : 'locked')}
+                    />
+                  ))
+                ) : (
+                  <div className="col-span-full text-center py-8 text-gray-500 text-sm italic">
+                    All matches currently under internal review.
+                  </div>
+                )}
               </div>
             </div>
           </div>

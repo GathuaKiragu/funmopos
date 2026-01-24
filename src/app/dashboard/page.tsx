@@ -5,17 +5,18 @@ import { useAccess } from "@/hooks/useAccess";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Lock, Activity, CheckCircle, AlertTriangle, Calendar as CalendarIcon, ChevronRight, ChevronLeft } from "lucide-react";
+import { getFixtures, Fixture, Sport } from "@/lib/api-football";
+import { format, addDays, isSameDay, subDays } from "date-fns";
+import { Trophy, Activity, Calendar as CalendarIcon, ChevronRight, ChevronLeft, Lock, AlertTriangle, CheckCircle } from "lucide-react";
 import { PaymentModal } from "@/components/payment-modal";
-import { getFixtures, Fixture } from "@/lib/api-football";
-import { format, addDays, isSameDay } from "date-fns";
 
 export default function DashboardPage() {
     const { user, loading: authLoading } = useAuth();
-    const { tier, isValid, loading: accessLoading, canAccess } = useAccess();
+    const { tier, isValid, loading: accessLoading, canAccess, expiry } = useAccess();
     const router = useRouter();
 
     const [selectedDate, setSelectedDate] = useState(new Date());
+    const [selectedSport, setSelectedSport] = useState<Sport>("football");
     const [fixtures, setFixtures] = useState<Fixture[]>([]);
     const [loadingFixtures, setLoadingFixtures] = useState(true);
 
@@ -28,12 +29,12 @@ export default function DashboardPage() {
     useEffect(() => {
         const loadData = async () => {
             setLoadingFixtures(true);
-            const data = await getFixtures(selectedDate);
+            const data = await getFixtures(selectedDate, selectedSport);
             setFixtures(data);
             setLoadingFixtures(false);
         };
         loadData();
-    }, [selectedDate]);
+    }, [selectedDate, selectedSport]);
 
     if (authLoading || accessLoading) {
         return (
@@ -165,7 +166,7 @@ export default function DashboardPage() {
                     <div>
                         <h1 className="text-3xl font-bold mb-2">My Dashboard</h1>
                         <p className="text-gray-400 text-sm">
-                            Access Level: <span className={`font-bold uppercase ${isValid ? 'text-yellow-500' : 'text-gray-500'}`}>{isValid ? tier : "Expired / Free"}</span>
+                            Access Level: <span className={`font-bold uppercase ${isValid ? 'text-yellow-500' : 'text-gray-500'}`}>{isValid ? tier : (user ? "Free Tier" : "Guest")}</span>
                         </p>
                     </div>
 
@@ -175,51 +176,80 @@ export default function DashboardPage() {
                         </div>
                     ) : (
                         <div className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-full flex items-center gap-2 text-emerald-500 text-sm font-bold">
-                            <CheckCircle className="w-4 h-4" /> Active until 23:59
+                            <CheckCircle className="w-4 h-4" /> Active until {expiry ? format(expiry, "MMM dd, HH:mm") : "23:59"}
                         </div>
                     )}
                 </div>
 
-                {/* Date Navigation */}
-                <div className="flex items-center justify-center gap-4 mb-8 bg-white/5 p-4 rounded-xl border border-white/10">
-                    <div className="flex items-center gap-2">
-                        <CalendarIcon className="w-5 h-5 text-yellow-500" />
-                        <span className="font-bold text-sm text-gray-300">Select Date:</span>
-                    </div>
-                    {/* Native Date Picker for robustness */}
-                    <input
-                        type="date"
-                        value={format(selectedDate, "yyyy-MM-dd")}
-                        onChange={handleDateChange}
-                        className="bg-black border border-white/20 rounded px-4 py-2 text-white font-mono focus:outline-none focus:border-yellow-500"
-                    />
-                    <Button variant="ghost" size="sm" onClick={() => setSelectedDate(new Date())} className="text-yellow-500 hover:text-yellow-400 hover:bg-white/5">
-                        Today
-                    </Button>
+            </div>
+
+            {/* Sport & Date Selection Row */}
+            <div className="flex flex-col lg:flex-row gap-6 mb-8">
+                {/* Sport Selector */}
+                <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 shrink-0">
+                    <button
+                        onClick={() => setSelectedSport("football")}
+                        className={`px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${selectedSport === "football" ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'}`}
+                    >
+                        <Trophy className="w-4 h-4" /> Football
+                    </button>
+                    <button
+                        onClick={() => setSelectedSport("basketball")}
+                        className={`px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${selectedSport === "basketball" ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'}`}
+                    >
+                        <Activity className="w-4 h-4" /> Basketball
+                    </button>
                 </div>
 
-                {/* Fixtures Grid */}
-                {loadingFixtures ? (
-                    <div className="flex flex-col items-center justify-center py-20 text-gray-500">
-                        <Activity className="w-8 h-8 animate-spin mb-4 text-yellow-500" />
-                        <p>Analyzing market data...</p>
+                {/* Date Navigation */}
+                <div className="flex-1 flex items-center justify-between gap-4 bg-white/5 p-4 rounded-xl border border-white/10">
+                    <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
+                            <CalendarIcon className="w-5 h-5 text-yellow-500" />
+                            <span className="font-bold text-sm text-gray-300">Date:</span>
+                        </div>
+                        <input
+                            type="date"
+                            value={format(selectedDate, "yyyy-MM-dd")}
+                            onChange={handleDateChange}
+                            className="bg-black border border-white/20 rounded px-4 py-2 text-white font-mono text-sm focus:outline-none focus:border-yellow-500"
+                        />
                     </div>
-                ) : fixtures.length > 0 ? (
-                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {fixtures.map((fixture) => (
-                            <TipCard key={fixture.id} fixture={fixture} />
-                        ))}
-                    </div>
-                ) : (
-                    <div className="text-center py-20 bg-white/5 rounded-xl border border-white/5 border-dashed">
-                        <p className="text-gray-500">No high-confidence signals found for this date.</p>
-                        <Button variant="link" onClick={() => setSelectedDate(new Date())} className="text-yellow-500">
-                            Return to Today
+                    <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => setSelectedDate(subDays(selectedDate, 1))} className="text-gray-400 hover:text-white">
+                            <ChevronLeft className="w-4 h-4" />
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => setSelectedDate(new Date())} className="text-yellow-500 hover:text-yellow-400 hover:bg-white/5 text-xs font-bold uppercase tracking-tighter">
+                            Today
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => setSelectedDate(addDays(selectedDate, 1))} className="text-gray-400 hover:text-white">
+                            <ChevronRight className="w-4 h-4" />
                         </Button>
                     </div>
-                )}
-
+                </div>
             </div>
+
+            {/* Fixtures Grid */}
+            {loadingFixtures ? (
+                <div className="flex flex-col items-center justify-center py-20 text-gray-500">
+                    <Activity className="w-8 h-8 animate-spin mb-4 text-yellow-500" />
+                    <p>Analyzing market data...</p>
+                </div>
+            ) : fixtures.length > 0 ? (
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {fixtures.map((fixture) => (
+                        <TipCard key={fixture.id} fixture={fixture} />
+                    ))}
+                </div>
+            ) : (
+                <div className="text-center py-24 bg-white/5 rounded-2xl border border-white/5 border-dashed">
+                    <p className="text-gray-500 mb-4 font-medium text-lg">No high-confidence {selectedSport} signals found for {format(selectedDate, "MMM dd")}.</p>
+                    <Button variant="link" onClick={() => setSelectedDate(new Date())} className="text-yellow-500 font-bold">
+                        Return to Today's Market
+                    </Button>
+                </div>
+            )}
+
         </div>
     );
 }

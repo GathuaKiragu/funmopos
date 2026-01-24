@@ -1,10 +1,13 @@
-import { format } from "date-fns";
+import { format, subDays, addDays, isPast, addHours } from "date-fns";
 import { db } from "@/lib/firebase";
-import { collection, query, where, getDocs, writeBatch, doc, getDoc } from "firebase/firestore";
+import { collection, query, where, getDocs, writeBatch, doc } from "firebase/firestore";
 import axios from "axios";
+
+export type Sport = "football" | "basketball";
 
 export interface Fixture {
     id: number;
+    sport: Sport;
     league: {
         name: string;
         logo: string;
@@ -21,7 +24,7 @@ export interface Fixture {
     date: string;
     status: {
         short: string;
-        elapsed?: number;
+        elapsed?: number | null;
     };
     prediction?: {
         picked: string;
@@ -32,105 +35,263 @@ export interface Fixture {
     } | null;
 }
 
-const API_KEY = process.env.NEXT_PUBLIC_API_FOOTBALL_KEY;
-const BASE_URL = "https://v3.football.api-sports.io";
+const API_KEY = process.env.NEXT_PUBLIC_FOOTBALL_DATA_API_KEY || process.env.FOOTBALL_DATA_API_KEY;
+const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
+const BASE_URL = "https://api.football-data.org/v4";
+const DEEPSEEK_URL = "https://api.deepseek.com/chat/completions";
 
-// Fetch from API-Football
-const fetchFromApi = async (date: Date): Promise<Fixture[]> => {
-    if (!API_KEY) {
-        console.error("Missing API_FOOTBALL_KEY");
+// Competition mapping: Premier League (PL), La Liga (PD), Serie A (SA), Bundesliga (BL1), Ligue 1 (FL1)
+const COMPETITIONS = ["PL", "PD", "SA", "BL1", "FL1"];
+
+/**
+ * Returns the current date/time adjusted to Nairobi (EAT, UTC+3).
+ */
+export const getNairobiNow = () => {
+    const now = new Date();
+    // In many environments, the system clock is UTC. We add 3 hours.
+    // If the system clock is already EAT, this might double-offset.
+    // Better practice: use the UTC time and calculate offset.
+    const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
+    return new Date(utcTime + (3 * 3600000));
+};
+
+// Fetch from Football-Data.org
+const fetchFromApi = async (targetDate: Date, sport: Sport = "football"): Promise<Fixture[]> => {
+    if (sport !== "football") {
+        console.warn(`Sport ${sport} not yet supported in real-time fetch`);
         return [];
     }
 
-    // We fetch for "Today" -> Date
-    const formattedDate = format(date, "yyyy-MM-dd");
+    if (!API_KEY) {
+        console.error("Missing FOOTBALL_DATA_API_KEY");
+        return [];
+    }
+
+    const targetDateKey = format(targetDate, "yyyy-MM-dd");
+
+    // We query a 2-day range to ensure we capture matches that might crossover UTC days but fall on the same EAT day.
+    const dateFrom = format(subDays(targetDate, 1), "yyyy-MM-dd");
+    const dateTo = format(targetDate, "yyyy-MM-dd");
 
     try {
-        // Preferred Leagues: Premier League (39), La Liga (140), Serie A (135), Bundesliga (78), Ligue 1 (61)
-        // We can add more or make this dynamic.
-        const PREFERRED_LEAGUES = [39, 140, 135, 78, 61];
-
-        const response = await axios.get(`${BASE_URL}/fixtures`, {
+        const response = await axios.get(`${BASE_URL}/matches`, {
             params: {
-                date: formattedDate,
-                timezone: "Africa/Nairobi"
+                dateFrom,
+                dateTo,
+                competitions: COMPETITIONS.join(',')
             },
             headers: {
-                'x-rapidapi-key': API_KEY,
-                'x-rapidapi-host': 'v3.football.api-sports.io'
+                'X-Auth-Token': API_KEY
             }
         });
 
-        const rawData = response.data.response;
+        const rawMatches = response.data.matches;
+        if (!rawMatches || !Array.isArray(rawMatches)) return [];
 
-        if (!rawData || !Array.isArray(rawData)) return [];
+        // Map to existing Fixture interface
+        const fixtures: Fixture[] = rawMatches
+            .filter((match: any) => {
+                // Convert utcDate (e.g., "2024-01-24T18:30:00Z") to Nairobi time (UTC+3)
+                const utcDate = new Date(match.utcDate);
+                const nairobiDate = new Date(utcDate.getTime() + (3 * 60 * 60 * 1000));
+                const nairobiDateString = format(nairobiDate, "yyyy-MM-dd");
 
-        const fixtures: Fixture[] = rawData
-            .filter((item: any) => PREFERRED_LEAGUES.includes(item.league.id))
-            .map((item: any) => ({
-                id: item.fixture.id,
+                return nairobiDateString === targetDateKey;
+            })
+            .map((match: any) => ({
+                id: match.id,
                 league: {
-                    name: item.league.name,
-                    logo: item.league.logo,
-                    flag: item.league.flag
+                    name: match.competition.name,
+                    logo: match.competition.emblem,
+                    flag: match.area.flag || ""
                 },
                 homeTeam: {
-                    name: item.teams.home.name,
-                    logo: item.teams.home.logo
+                    name: match.homeTeam.name,
+                    logo: match.homeTeam.crest
                 },
                 awayTeam: {
-                    name: item.teams.away.name,
-                    logo: item.teams.away.logo
+                    name: match.awayTeam.name,
+                    logo: match.awayTeam.crest
                 },
-                date: item.fixture.date,
+                date: match.utcDate,
                 status: {
-                    short: item.fixture.status.short,
-                    elapsed: item.fixture.status.elapsed
+                    short: mapStatus(match.status),
+                    elapsed: null
                 },
-                prediction: null // Initialize as null. AI/Admin must populate this.
+                sport: "football",
+                prediction: null
             }));
 
         return fixtures;
 
     } catch (error) {
-        console.error("API Fetch Error:", error);
+        console.error("Football-Data Fetch Error:", error);
         return [];
     }
 };
 
-export const getFixtures = async (date: Date): Promise<Fixture[]> => {
+// Map Football-Data status to our existing status codes if needed
+const mapStatus = (status: string): string => {
+    switch (status) {
+        case "FINISHED": return "FT";
+        case "IN_PLAY": return "1H"; // Simplified
+        case "PAUSED": return "HT";
+        case "SCHEDULED": return "TBD";
+        case "TIMED": return "TBD";
+        default: return status;
+    }
+};
+
+// AI Analysis with DeepSeek
+const analyzeFixtures = async (fixtures: Fixture[]): Promise<Fixture[]> => {
+    if (!DEEPSEEK_KEY || fixtures.length === 0) return fixtures;
+
+    const fixturesData = fixtures.map(f => ({
+        id: f.id,
+        sport: f.sport,
+        home: f.homeTeam.name,
+        away: f.awayTeam.name,
+        league: f.league.name
+    }));
+
+    const prompt = `
+        You are a professional ${fixtures[0].sport} analyst. Analyze the following matches and provide betting predictions.
+        For each match, return:
+        - picked: The predicted result (e.g., "Arsenal Win", "Over 2.5 Goals", "Draw")
+        - confidence: A percentage (0-100) representing your confidence in the tip.
+        - type: One of "result", "goals", or "score".
+        - isRisky: Boolean, true if confidence is below 40%.
+        - requiresTier: "free", "basic", "standard", or "vip". (Assign "vip" for high confidence top league matches, "free" for clear favorites).
+
+        Return ONLY a JSON array in this format:
+        [{"id": number, "picked": string, "confidence": number, "type": "result"|"goals"|"score", "isRisky": boolean, "requiresTier": string}]
+
+        Matches to analyze:
+        ${JSON.stringify(fixturesData)}
+    `;
+
+    try {
+        const response = await axios.post(DEEPSEEK_URL, {
+            model: "deepseek-chat",
+            messages: [
+                { role: "system", content: "You are a football betting expert. Respond only with JSON." },
+                { role: "user", content: prompt }
+            ],
+            response_format: { type: "json_object" }
+        }, {
+            headers: {
+                'Authorization': `Bearer ${DEEPSEEK_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const content = response.data.choices[0].message.content;
+        const predictions = JSON.parse(content);
+
+        // Handle if AI returns { "predictions": [...] } instead of just array
+        const predictionArray = Array.isArray(predictions) ? predictions : (predictions.predictions || []);
+
+        return fixtures.map(fixture => {
+            const pred = predictionArray.find((p: any) => p.id === fixture.id);
+            if (pred) {
+                return {
+                    ...fixture,
+                    prediction: {
+                        picked: pred.picked,
+                        confidence: pred.confidence,
+                        type: pred.type,
+                        isRisky: pred.isRisky,
+                        requiresTier: pred.requiresTier
+                    }
+                };
+            }
+            return fixture;
+        });
+
+    } catch (error) {
+        console.error("DeepSeek Analysis Error:", error);
+        return fixtures;
+    }
+};
+
+export const getFixtures = async (date: Date, sport: Sport = "football", showPast: boolean = false): Promise<Fixture[]> => {
     const dateKey = format(date, "yyyy-MM-dd");
+    const nairobiNow = getNairobiNow();
 
     // 1. Try Firestore Cache
+    let fixtures: Fixture[] = [];
     try {
-        const q = query(collection(db, "fixtures"), where("dateKey", "==", dateKey));
+        const q = query(
+            collection(db, "fixtures"),
+            where("dateKey", "==", dateKey),
+            where("sport", "==", sport)
+        );
         const querySnapshot = await getDocs(q);
 
         if (!querySnapshot.empty) {
-            console.log(`[Cache Hit] Serving ${querySnapshot.size} fixtures for ${dateKey}`);
-            return querySnapshot.docs.map(doc => doc.data() as Fixture);
+            fixtures = querySnapshot.docs.map(doc => doc.data() as Fixture);
+            console.log(`[Cache Hit] Serving ${fixtures.length} ${sport} fixtures for ${dateKey}`);
         }
     } catch (err) {
         console.error("Cache Read Error", err);
     }
 
     // 2. Cache Miss -> Real API
-    console.log(`[Cache Miss] Fetching from API-Football for ${dateKey}`);
-    const freshFixtures = await fetchFromApi(date);
+    if (fixtures.length === 0) {
+        console.log(`[Cache Miss] Fetching from API for ${sport} on ${dateKey}`);
+        const rawFixtures = await fetchFromApi(date, sport);
 
-    if (freshFixtures.length > 0) {
-        try {
-            const batch = writeBatch(db);
-            freshFixtures.forEach(fixture => {
-                const docRef = doc(db, "fixtures", `${dateKey}-${fixture.id}`);
-                batch.set(docRef, { ...fixture, dateKey });
-            });
-            await batch.commit();
-            console.log(`[Cache Update] Saved ${freshFixtures.length} matches.`);
-        } catch (err) {
-            console.error("Cache Write Error", err);
+        if (rawFixtures && rawFixtures.length > 0) {
+            // Run AI Analysis immediately on new data
+            console.log(`[AI Analysis] Processing ${rawFixtures.length} ${sport} matches with DeepSeek...`);
+            fixtures = await analyzeFixtures(rawFixtures);
+
+            try {
+                const batch = writeBatch(db);
+                fixtures.forEach(fixture => {
+                    const docRef = doc(db, "fixtures", `${sport}-${dateKey}-${fixture.id}`);
+                    batch.set(docRef, { ...fixture, dateKey });
+                });
+                await batch.commit();
+                console.log(`[Cache Update] Saved ${fixtures.length} analyzed ${sport} matches for ${dateKey}.`);
+            } catch (err) {
+                console.error("Cache Write Error", err);
+            }
         }
     }
 
-    return freshFixtures;
+    // 3. Past Game Filtering
+    if (!showPast) {
+        return fixtures.filter(f => {
+            const matchDate = new Date(f.date);
+            // Consider game "past" if it started more than 15 minutes ago
+            const matchStartTimeEAT = new Date(matchDate.getTime() + (3 * 3600000));
+            return matchStartTimeEAT.getTime() > (nairobiNow.getTime() - (15 * 60000));
+        });
+    }
+
+    return fixtures;
+};
+
+/**
+ * Proactively syncs and analyzes fixtures for the next N days.
+ * This should be called by an automated job (cron).
+ */
+export const syncAllFixtures = async (days: number = 7): Promise<void> => {
+    const nairobiNow = getNairobiNow();
+    console.log(`[Sync Started] Current Nairobi Time: ${format(nairobiNow, "yyyy-MM-dd HH:mm")}`);
+    console.log(`Proactively analyzing next ${days} days...`);
+
+    const sports: Sport[] = ["football"];
+
+    for (const sport of sports) {
+        for (let i = 0; i < days; i++) {
+            const targetDate = addDays(nairobiNow, i);
+            const dateKey = format(targetDate, "yyyy-MM-dd");
+            console.log(`--- Syncing ${sport} for ${dateKey} ---`);
+            // We pass showPast=true to ensures even morning games on "Today" are cached early
+            await getFixtures(targetDate, sport, true);
+        }
+    }
+    console.log("[Sync Completed]");
 };
