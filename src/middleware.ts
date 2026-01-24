@@ -45,7 +45,9 @@ export function middleware(request: NextRequest) {
     }
 
     // Get client IP
-    const ip = request.ip || request.headers.get('x-forwarded-for') || 'unknown';
+    const ip = request.headers.get('x-forwarded-for') ||
+        request.headers.get('x-real-ip') ||
+        'unknown';
 
     // Determine rate limit for this route
     let limit = RATE_LIMITS.default;
