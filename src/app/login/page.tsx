@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword, sendEmailVerification } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 
 export default function LoginPage() {
@@ -16,6 +16,8 @@ export default function LoginPage() {
     });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+    const [needsVerification, setNeedsVerification] = useState(false);
+    const [resendingEmail, setResendingEmail] = useState(false);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
@@ -36,8 +38,18 @@ export default function LoginPage() {
         setLoading(true);
 
         try {
-            await signInWithEmailAndPassword(auth, formData.email, formData.password);
-            router.push("/"); // Redirect to home/dashboard
+            const userCredential = await signInWithEmailAndPassword(auth, formData.email, formData.password);
+            const user = userCredential.user;
+
+            // Check if email is verified
+            if (!user.emailVerified) {
+                setNeedsVerification(true);
+                setError("Please verify your email before logging in. Check your inbox/spam folder for the verification link.");
+                setLoading(false);
+                return;
+            }
+
+            router.push("/");
         } catch (err: any) {
             console.error("Login Error:", err);
             if (err.code === "auth/invalid-credential" || err.code === "auth/user-not-found" || err.code === "auth/wrong-password") {
@@ -49,6 +61,22 @@ export default function LoginPage() {
             }
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleResendVerification = async () => {
+        if (!auth.currentUser) return;
+
+        setResendingEmail(true);
+        try {
+            await sendEmailVerification(auth.currentUser);
+            setError("");
+            alert("Verification email sent! Please check your inbox.");
+        } catch (err) {
+            console.error("Resend error:", err);
+            setError("Failed to resend verification email. Please try again.");
+        } finally {
+            setResendingEmail(false);
         }
     };
 
@@ -109,6 +137,21 @@ export default function LoginPage() {
                             </>
                         ) : "Sign In"}
                     </Button>
+
+                    {needsVerification && (
+                        <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-sm rounded-md">
+                            <p className="font-semibold mb-2">Email Not Verified</p>
+                            <p className="text-xs mb-3">You need to verify your email before accessing the dashboard.</p>
+                            <Button
+                                onClick={handleResendVerification}
+                                disabled={resendingEmail}
+                                variant="outline"
+                                className="w-full border-yellow-500/50 text-yellow-500 hover:bg-yellow-500/10 text-xs"
+                            >
+                                {resendingEmail ? "Sending..." : "Resend Verification Email"}
+                            </Button>
+                        </div>
+                    )}
 
                     <div className="relative">
                         <div className="absolute inset-0 flex items-center">

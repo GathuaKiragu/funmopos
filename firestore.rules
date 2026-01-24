@@ -8,10 +8,17 @@ service cloud.firestore {
     }
     
     // Fixtures 
-    // PROD: Only Admin/Server should write. Clients only read.
+    // Only verified users can read, only server can write
     match /fixtures/{fixtureId} {
-      allow read: if true;
-      allow write: if false; // Only manageable via Firebase Admin SDK or Server-Side routes
+      allow read: if request.auth != null && request.auth.token.email_verified == true;
+      allow write: if false; // Server-only via Admin SDK
+    }
+
+    // Transactions
+    // Users can only read their own transactions, server-only writes
+    match /transactions/{txId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow write: if false; // Server-only via Admin SDK
     }
 
     // Default deny

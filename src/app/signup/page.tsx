@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from "firebase/auth";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 
@@ -14,11 +14,13 @@ export default function SignupPage() {
     const [formData, setFormData] = useState({
         name: "",
         email: "",
+        phone: "",
         password: "",
         ageGate: false,
     });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+    const [verificationSent, setVerificationSent] = useState(false);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value, type, checked } = e.target;
@@ -32,7 +34,7 @@ export default function SignupPage() {
         setError("");
 
         // 1. Basic Validation
-        if (!formData.name || !formData.email || !formData.password) {
+        if (!formData.name || !formData.email || !formData.phone || !formData.password) {
             setError("Please fill in all fields.");
             return;
         }
@@ -44,6 +46,12 @@ export default function SignupPage() {
             setError("Password must be at least 6 characters.");
             return;
         }
+        // Validate phone number (basic Kenya format)
+        const phoneRegex = /^(\+254|0)[17]\d{8}$/;
+        if (!phoneRegex.test(formData.phone.replace(/\s/g, ''))) {
+            setError("Please enter a valid Kenyan phone number (e.g., 0712345678 or +254712345678)");
+            return;
+        }
 
         setLoading(true);
 
@@ -53,14 +61,15 @@ export default function SignupPage() {
             const user = userCredential.user;
 
             // 3. Create Firestore Profile
-            // We use the Auth UID as the Document ID for easy lookup
             await setDoc(doc(db, "users", user.uid), {
                 uid: user.uid,
                 name: formData.name,
                 email: formData.email,
-                role: "user", // Default role
+                phone: formData.phone,
+                role: "user",
                 subscriptionStatus: "free",
                 subscriptionExpiry: null,
+                emailVerified: false,
                 createdAt: serverTimestamp(),
             });
 
@@ -69,8 +78,11 @@ export default function SignupPage() {
                 displayName: formData.name
             });
 
-            // 5. Success -> Redirect
-            router.push("/");
+            // 5. Send Email Verification
+            await sendEmailVerification(user);
+            setVerificationSent(true);
+
+            // Don't redirect immediately - show verification message
 
         } catch (err: any) {
             console.error("Signup Error:", err);
@@ -134,6 +146,19 @@ export default function SignupPage() {
                     </div>
 
                     <div className="space-y-2">
+                        <label className="text-sm font-medium text-gray-300">Phone Number</label>
+                        <input
+                            name="phone"
+                            type="tel"
+                            value={formData.phone}
+                            onChange={handleChange}
+                            className="w-full bg-black/50 border border-white/10 rounded-md px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50"
+                            placeholder="0712345678 or +254712345678"
+                        />
+                        <p className="text-xs text-gray-500">For payment verification and alerts</p>
+                    </div>
+
+                    <div className="space-y-2">
                         <label className="text-sm font-medium text-gray-300">Password</label>
                         <input
                             name="password"
@@ -161,15 +186,27 @@ export default function SignupPage() {
 
                     <Button
                         onClick={handleSignup}
-                        disabled={loading}
+                        disabled={loading || verificationSent}
                         className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {loading ? (
                             <>
                                 <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Creating Account...
                             </>
+                        ) : verificationSent ? (
+                            "Check Your Email"
                         ) : "Create Account"}
                     </Button>
+
+                    {verificationSent && (
+                        <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-sm rounded-md">
+                            <p className="font-semibold mb-1">✓ Account created successfully!</p>
+                            <p className="text-xs">We've sent a verification email to <strong>{formData.email}</strong>. Please check your inbox and verify your email before logging in.</p>
+                            <Link href="/login" className="inline-block mt-3 text-yellow-500 hover:text-yellow-400 font-semibold text-xs">
+                                Go to Login →
+                            </Link>
+                        </div>
+                    )}
 
                     <p className="text-center text-sm text-gray-400">
                         Already have an account?{" "}
