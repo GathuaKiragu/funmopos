@@ -29,6 +29,7 @@ export interface Fixture {
     prediction?: {
         picked: string;
         confidence: number;
+        reasoning: string;
         type: "result" | "goals" | "score";
         isRisky: boolean;
         requiresTier: "free" | "basic" | "standard" | "vip";
@@ -166,12 +167,13 @@ const analyzeFixtures = async (fixtures: Fixture[]): Promise<Fixture[]> => {
         For each match, return:
         - picked: The predicted result (e.g., "Arsenal Win", "Over 2.5 Goals", "Draw")
         - confidence: A percentage (0-100) representing your confidence in the tip.
+        - reasoning: A short, punchy explanation (max 15 words) of WHY this prediction was made (e.g., "Home team unbeaten in 5", "Key striker injured").
         - type: One of "result", "goals", or "score".
         - isRisky: Boolean, true if confidence is below 40%.
         - requiresTier: "free", "basic", "standard", or "vip". (Assign "vip" for high confidence top league matches, "free" for clear favorites).
 
         Return ONLY a JSON array in this format:
-        [{"id": number, "picked": string, "confidence": number, "type": "result"|"goals"|"score", "isRisky": boolean, "requiresTier": string}]
+        [{"id": number, "picked": string, "confidence": number, "reasoning": string, "type": "result"|"goals"|"score", "isRisky": boolean, "requiresTier": string}]
 
         Matches to analyze:
         ${JSON.stringify(fixturesData)}
@@ -206,6 +208,7 @@ const analyzeFixtures = async (fixtures: Fixture[]): Promise<Fixture[]> => {
                     prediction: {
                         picked: pred.picked,
                         confidence: pred.confidence,
+                        reasoning: pred.reasoning || "AI analysis based on recent form and stats.", // Fallback
                         type: pred.type,
                         isRisky: pred.isRisky,
                         requiresTier: pred.requiresTier

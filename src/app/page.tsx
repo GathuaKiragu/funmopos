@@ -1,12 +1,13 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { ArrowRight, ShieldCheck, Trophy, Activity, Lock, AlertTriangle, User as UserIcon } from "lucide-react";
+import { ArrowRight, ShieldCheck, Trophy, Activity, Lock, AlertTriangle, User as UserIcon, CheckCircle, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { useEffect, useState } from "react";
 import { getFixturesClient as getFixtures, Fixture, Sport } from "@/lib/api-football";
 import { format } from "date-fns";
+import { PerformanceTicker } from "@/components/performance-ticker";
 
 export default function Home() {
   const { user } = useAuth();
@@ -81,100 +82,236 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="flex-1 pt-24">
+      <main className="flex-1 pt-16">
 
         {/* Hero Section */}
-        <section className="relative py-20 lg:py-32 overflow-hidden">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-yellow-500/10 via-black to-black"></div>
+        <section className="relative py-20 lg:py-32 overflow-hidden bg-black">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-yellow-500/10 via-black to-black"></div>
 
-          <div className="container mx-auto px-4 relative z-10 text-center max-w-4xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-yellow-500 text-xs font-medium mb-8">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-yellow-500"></span>
-              </span>
-              AI Model v2.4 Live
-            </div>
+          <div className="container mx-auto px-4 relative z-10">
+            <div className="flex flex-col lg:flex-row items-center gap-12 lg:gap-20">
 
-            <h1 className="text-5xl lg:text-7xl font-bold tracking-tight text-white mb-6">
-              Stop Guessing. <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-yellow-600">
-                Make Informed Bets.
-              </span>
-            </h1>
+              <div className="flex-1 text-center lg:text-left max-w-2xl">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-yellow-500 text-xs font-bold uppercase tracking-wide mb-8">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-yellow-500"></span>
+                  </span>
+                  Trusted by 1,000+ Smart Bettors
+                </div>
 
-            <p className="text-lg text-gray-400 mb-10 max-w-2xl mx-auto leading-relaxed">
-              Premium football analytics powered by advanced statistical modeling.
-              We don't sell hope; we provide <span className="text-white font-semibold">probability</span>.
-              Strict "No Bet" safety rails included.
-            </p>
+                <h1 className="text-5xl lg:text-7xl font-extrabold tracking-tight text-white mb-6 leading-tight">
+                  The <span className="text-yellow-500">Unfair Advantage</span> <br className="hidden md:block" />
+                  for Sports Investors.
+                </h1>
 
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Button size="lg" className="h-12 px-8 bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded-full w-full sm:w-auto text-base">
-                View Today's Tips
-              </Button>
-              <Button size="lg" variant="outline" className="h-12 px-8 border-white/10 bg-white/5 hover:bg-white/10 text-white rounded-full w-full sm:w-auto text-base">
-                How It Works <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </div>
+                <p className="text-lg lg:text-xl text-gray-400 mb-10 leading-relaxed">
+                  Stop donating to the bookies. Our AI analyzes 10,000+ data points per match to find <span className="text-white font-semibold">value</span> that others miss.
+                </p>
 
-            <div className="mt-12 flex items-center justify-center gap-8 text-gray-500 text-sm">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-emerald-500" /> Verified History
+                <div className="flex flex-col sm:flex-row items-center lg:justify-start justify-center gap-4 mb-16">
+                  <Button size="lg" className="h-14 px-8 bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-lg rounded-full w-full sm:w-auto shadow-lg shadow-yellow-500/20 transition-all hover:scale-105">
+                    See Today's Free Picks
+                  </Button>
+                  <Link href="/signup">
+                    <Button size="lg" variant="outline" className="h-14 px-8 border-white/20 bg-white/5 hover:bg-white/10 text-white rounded-full w-full sm:w-auto text-lg font-semibold">
+                      Join Premium Access
+                    </Button>
+                  </Link>
+                </div>
+
+                {/* Trust Signals */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8 border-t border-white/10 pt-8">
+                  <div>
+                    <p className="text-3xl font-bold text-white">82%</p>
+                    <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">Win Rate</p>
+                  </div>
+                  <div>
+                    <p className="text-3xl font-bold text-white">10K+</p>
+                    <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">Analyzed</p>
+                  </div>
+                  <div>
+                    <p className="text-3xl font-bold text-white">24/7</p>
+                    <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">Live</p>
+                  </div>
+                  <div>
+                    <p className="text-3xl font-bold text-white">0%</p>
+                    <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">Emotion</p>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Activity className="w-4 h-4 text-blue-500" /> Data-Driven
+
+              {/* Hero Image */}
+              <div className="flex-1 w-full max-w-lg lg:max-w-none relative animate-in fade-in zoom-in duration-1000">
+                <div className="absolute -inset-4 bg-yellow-500/20 blur-3xl opacity-20 rounded-full"></div>
+                <img
+                  src="/hero-real.jpg"
+                  alt="Soccer Player Action Shot"
+                  className="relative w-full h-auto rounded-2xl shadow-2xl hover:scale-105 transition-transform duration-700 opacity-90 grayscale-[30%] brightness-[0.8]"
+                />
               </div>
+
             </div>
           </div>
         </section>
 
-        {/* Free Games Section */}
-        <section className="py-12 border-y border-white/5 bg-white/[0.02]">
-          <div className="container mx-auto px-4">
-            <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
-              <div className="text-left max-w-md">
-                <h3 className="text-xl font-bold text-white mb-2">Today's Free Picks</h3>
-                <p className="text-sm text-gray-400 mb-6">High-value opportunities available to everyone. Our AI has flagged these as strong starts.</p>
-                <div className="flex bg-white/5 p-1 rounded-lg border border-white/10 w-fit">
-                  <button
-                    onClick={() => setSelectedSport("football")}
-                    className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${selectedSport === "football" ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'}`}
-                  >
-                    Football
-                  </button>
-                  <button
-                    onClick={() => setSelectedSport("basketball")}
-                    className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${selectedSport === "basketball" ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'}`}
-                  >
-                    Basketball
-                  </button>
+        {/* Live Performance Ticker */}
+        <PerformanceTicker />
+
+        {/* Problem vs Solution */}
+        <section className="py-20 bg-white/[0.02] border-t border-white/5 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-1/3 h-full bg-gradient-to-l from-emerald-500/5 to-transparent pointer-events-none"></div>
+
+          <div className="container mx-auto px-4 relative z-10">
+            <div className="grid lg:grid-cols-2 gap-16 items-center">
+
+              <div>
+                <div className="mb-8">
+                  <h2 className="text-3xl lg:text-4xl font-bold text-white mb-4">Why Most Bettors Lose</h2>
+                  <p className="text-gray-400 text-lg">The house always wins because they utilize data. You lose because you use emotion. It's time to level the playing field.</p>
+                </div>
+
+                <div className="space-y-6">
+                  {/* The Old Way */}
+                  <div className="p-6 rounded-2xl bg-red-900/5 border border-red-500/20 relative overflow-hidden group hover:border-red-500/40 transition-colors">
+                    <h3 className="text-xl font-bold text-red-500 mb-4 flex items-center gap-2">
+                      <XCircle className="w-5 h-5" /> The Amateur Way
+                    </h3>
+                    <ul className="space-y-3">
+                      <li className="flex items-start gap-3 text-gray-400 text-sm">
+                        <span className="text-red-500 mt-0.5">✕</span> Betting on favorite teams ("Fan bias")
+                      </li>
+                      <li className="flex items-start gap-3 text-gray-400 text-sm">
+                        <span className="text-red-500 mt-0.5">✕</span> Chasing losses with bigger bets
+                      </li>
+                    </ul>
+                  </div>
+
+                  {/* The Funmo Way */}
+                  <div className="p-6 rounded-2xl bg-emerald-900/10 border border-emerald-500/30 relative overflow-hidden group shadow-lg shadow-emerald-500/5">
+                    <h3 className="text-xl font-bold text-emerald-500 mb-4 flex items-center gap-2">
+                      <CheckCircle className="w-5 h-5" /> The Professional Way
+                    </h3>
+                    <ul className="space-y-3">
+                      <li className="flex items-start gap-3 text-white text-sm">
+                        <span className="text-emerald-500 mt-0.5">✓</span> Data-driven decisions (xG, Form, Injury news)
+                      </li>
+                      <li className="flex items-start gap-3 text-white text-sm">
+                        <span className="text-emerald-500 mt-0.5">✓</span> Disciplined staking strategy (Kelly Criterion)
+                      </li>
+                    </ul>
+                  </div>
                 </div>
               </div>
 
-              <div className="w-full lg:w-auto flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {loading ? (
-                  <div className="col-span-full flex justify-center py-8">
-                    <Activity className="w-6 h-6 animate-spin text-yellow-500" />
-                  </div>
-                ) : freeFixtures.length > 0 ? (
-                  freeFixtures.map(fixture => (
-                    <Card
-                      key={fixture.id}
-                      league={fixture.league.name}
-                      match={`${fixture.homeTeam.name} vs ${fixture.awayTeam.name}`}
-                      date={fixture.date}
-                      prediction={fixture.prediction?.picked || "ANALYZING..."}
-                      confidence={fixture.prediction?.confidence || 0}
-                      status={fixture.prediction?.isRisky ? 'nobet' : 'free'}
-                    />
-                  ))
-                ) : (
-                  <div className="col-span-full text-center py-8 text-gray-500 text-sm italic">
-                    No free picks available right now. Check back later!
-                  </div>
-                )}
+              <div className="relative group">
+                <div className="absolute -inset-1 bg-gradient-to-tr from-emerald-500/20 to-yellow-500/20 rounded-2xl blur-xl opacity-50 group-hover:opacity-75 transition-opacity"></div>
+                <img
+                  src="/graph-real.jpg"
+                  alt="Financial Analytics Graph"
+                  className="relative rounded-2xl border border-white/10 shadow-2xl w-full rotate-2 hover:rotate-0 transition-transform duration-500 grayscale-[50%] contrast-125 brightness-75"
+                />
               </div>
+
+            </div>
+          </div>
+        </section>
+
+        {/* How It Works */}
+        <section className="py-20 border-t border-white/5">
+          <div className="container mx-auto px-4">
+            <div className="text-center mb-16">
+              <h2 className="text-3xl font-bold text-white mb-4">How To Start Winning</h2>
+              <p className="text-gray-400">Three simple steps to smarter betting.</p>
+            </div>
+
+            <div className="grid md:grid-cols-3 gap-8 relative">
+              {/* Connecting Line (Desktop) */}
+              <div className="hidden md:block absolute top-8 left-[20%] right-[20%] h-0.5 bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
+
+              <div className="flex flex-col items-center text-center relative z-10">
+                <div className="w-16 h-16 bg-black rounded-2xl flex items-center justify-center border border-white/10 mb-6 text-2xl font-bold text-yellow-500 shadow-lg shadow-yellow-500/5">1</div>
+                <h3 className="text-xl font-bold text-white mb-3">We Analyze</h3>
+                <p className="text-gray-400 text-sm leading-relaxed max-w-xs mx-auto">Our algorithms scrape data from 50+ leagues, processing player stats, team form, and historical trends.</p>
+              </div>
+              <div className="flex flex-col items-center text-center relative z-10">
+                <div className="w-16 h-16 bg-black rounded-2xl flex items-center justify-center border border-white/10 mb-6 text-2xl font-bold text-yellow-500 shadow-lg shadow-yellow-500/5">2</div>
+                <h3 className="text-xl font-bold text-white mb-3">We Suggest</h3>
+                <p className="text-gray-400 text-sm leading-relaxed max-w-xs mx-auto">Our AI identifies matches where the bookmakers have miscalculated the odds, flagging high-value opportunities.</p>
+              </div>
+              <div className="flex flex-col items-center text-center relative z-10">
+                <div className="w-16 h-16 bg-black rounded-2xl flex items-center justify-center border border-white/10 mb-6 text-2xl font-bold text-yellow-500 shadow-lg shadow-yellow-500/5">3</div>
+                <h3 className="text-xl font-bold text-white mb-3">You Profit</h3>
+                <p className="text-gray-400 text-sm leading-relaxed max-w-xs mx-auto">You get clear, actionable tips. Place your bets with confidence and watch your bankroll grow.</p>
+              </div>
+            </div>
+
+            <div className="mt-20 max-w-5xl mx-auto rounded-3xl overflow-hidden border border-white/10 relative group">
+              <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10"></div>
+              <div className="absolute bottom-0 left-0 right-0 p-8 z-20 text-center">
+                <p className="text-sm font-bold text-yellow-500 uppercase tracking-widest mb-2">Premium Experience</p>
+                <h3 className="text-2xl font-bold text-white">Your Pocket Analyst</h3>
+              </div>
+              <img
+                src="/mobile-real.jpg"
+                alt="Using App on Mobile"
+                className="w-full h-auto opacity-70 group-hover:scale-105 transition-transform duration-700 grayscale-[40%] brightness-75 object-cover max-h-[500px]"
+              />
+            </div>
+          </div>
+        </section>
+
+        {/* Free Games Section (Matches the new bold style) */}
+        <section className="py-20 border-y border-white/5 bg-white/[0.02]">
+          <div className="container mx-auto px-4">
+            <div className="flex flex-col lg:flex-row items-center justify-between gap-8 mb-12">
+              <div className="text-left max-w-lg">
+                <h3 className="text-3xl font-bold text-white mb-4">Today's Market Watch</h3>
+                <p className="text-gray-400">
+                  We've identified <span className="text-white font-bold">{freeFixtures.length + midFixtures.length}</span> value opportunities today.
+                  Here are the free picks for the community.
+                </p>
+              </div>
+
+              <div className="flex bg-white/5 p-1 rounded-lg border border-white/10">
+                <button
+                  onClick={() => setSelectedSport("football")}
+                  className={`px-6 py-2 rounded-md text-sm font-bold transition-all ${selectedSport === "football" ? 'bg-yellow-500 text-black shadow-lg' : 'text-gray-400 hover:text-white'}`}
+                >
+                  Football
+                </button>
+                <button
+                  onClick={() => setSelectedSport("basketball")}
+                  className={`px-6 py-2 rounded-md text-sm font-bold transition-all ${selectedSport === "basketball" ? 'bg-yellow-500 text-black shadow-lg' : 'text-gray-400 hover:text-white'}`}
+                >
+                  Basketball
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {loading ? (
+                <div className="col-span-full flex justify-center py-12">
+                  <Activity className="w-8 h-8 animate-spin text-yellow-500" />
+                </div>
+              ) : freeFixtures.length > 0 ? (
+                freeFixtures.map(fixture => (
+                  <Card
+                    key={fixture.id}
+                    league={fixture.league.name}
+                    match={`${fixture.homeTeam.name} vs ${fixture.awayTeam.name}`}
+                    date={fixture.date}
+                    prediction={fixture.prediction?.picked || "ANALYZING..."}
+                    confidence={fixture.prediction?.confidence || 0}
+                    reasoning={fixture.prediction?.reasoning}
+                    status={fixture.prediction?.isRisky ? 'nobet' : 'free'}
+                  />
+                ))
+              ) : (
+                <div className="col-span-full text-center py-12 text-gray-500 italic">
+                  No free picks available right now. Check back later!
+                </div>
+              )}
             </div>
           </div>
         </section>
@@ -213,6 +350,7 @@ export default function Home() {
                         date={fixture.date}
                         prediction={fixture.prediction?.picked || "ANALYZING..."}
                         confidence={fixture.prediction?.confidence || 0}
+                        reasoning={fixture.prediction?.reasoning}
                         status={'free'}
                       />
                     ))
@@ -284,7 +422,7 @@ function Feature({ icon, title, description }: { icon: React.ReactNode, title: s
   );
 }
 
-function Card({ league, match, date, prediction, confidence, status }: { league: string, match: string, date: string, prediction: string, confidence: number, status: 'free' | 'locked' | 'nobet' }) {
+function Card({ league, match, date, prediction, confidence, reasoning, status }: { league: string, match: string, date: string, prediction: string, confidence: number, reasoning?: string, status: 'free' | 'locked' | 'nobet' }) {
   const isLocked = status === 'locked';
   const isNoBet = status === 'nobet';
 
@@ -317,11 +455,19 @@ function Card({ league, match, date, prediction, confidence, status }: { league:
         <h4 className={`font-semibold ${isLocked ? 'blur-sm select-none' : 'text-white'}`}>{match}</h4>
       </div>
 
-      <div className="flex items-center justify-between pt-4 border-t border-white/5">
-        <span className="text-sm text-gray-400">Prediction</span>
-        <span className={`font-mono font-bold ${isNoBet ? 'text-red-400' : 'text-yellow-400'} ${isLocked ? 'blur-sm select-none' : ''}`}>
-          {prediction}
-        </span>
+      <div className="flex flex-col gap-3 pt-4 border-t border-white/5">
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-400">Prediction</span>
+          <span className={`font-mono font-bold ${isNoBet ? 'text-red-400' : 'text-yellow-400'} ${isLocked ? 'blur-sm select-none' : ''}`}>
+            {prediction}
+          </span>
+        </div>
+
+        {reasoning && !isLocked && (
+          <div className="bg-white/5 p-2 rounded border border-white/5 text-xs text-gray-300 italic">
+            <span className="text-yellow-500 not-italic mr-1">💡</span> {reasoning}
+          </div>
+        )}
       </div>
     </div>
   );

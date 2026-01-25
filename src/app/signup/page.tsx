@@ -8,12 +8,6 @@ import { useRouter } from "next/navigation";
 import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from "firebase/auth";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
-import { Metadata } from "next";
-
-export const metadata: Metadata = {
-    title: "Sign Up",
-    description: "Create a Funmo Tips account to start winning with AI-powered betting insights.",
-};
 
 export default function SignupPage() {
     const router = useRouter();

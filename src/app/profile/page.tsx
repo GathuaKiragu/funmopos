@@ -6,9 +6,9 @@ import { useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebase";
 import { signOut } from "firebase/auth";
 import { useEffect, useState } from "react";
-import { doc, getDoc, collection, query, where, getDocs, orderBy } from "firebase/firestore";
+import { doc, getDoc, collection, query, where, getDocs, orderBy, updateDoc } from "firebase/firestore";
 import { PaymentModal } from "@/components/payment-modal";
-import { Loader2, User, CreditCard, History, LogOut, ChevronLeft } from "lucide-react";
+import { Loader2, User, CreditCard, History, LogOut, ChevronLeft, Wallet } from "lucide-react";
 import Link from "next/link";
 
 interface UserProfile {
@@ -17,18 +17,8 @@ interface UserProfile {
     subscriptionStatus: string;
     subscriptionExpiry: any;
     tier: string;
+    bankroll?: number;
 }
-
-import { Metadata } from "next";
-
-export const metadata: Metadata = {
-    title: "My Profile",
-    description: "Manage your account settings and subscription.",
-    robots: {
-        index: false,
-        follow: false,
-    }
-};
 
 export default function ProfilePage() {
     const { user, loading } = useAuth();
@@ -145,6 +135,42 @@ export default function ProfilePage() {
                         </div>
                     </div>
 
+
+
+                    {/* Bankroll Management */}
+                    <div className="bg-white/5 rounded-xl p-6 border border-white/10">
+                        <div className="flex justify-between items-start mb-4">
+                            <div>
+                                <h2 className="text-lg font-bold flex items-center gap-2">
+                                    <Wallet className="w-5 h-5 text-emerald-500" /> Smart Bankroll
+                                </h2>
+                                <p className="text-gray-400 text-sm mt-1">Set your total budget for AI stake recommendations</p>
+                            </div>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row items-end gap-4 p-4 bg-black/50 rounded-lg">
+                            <div className="w-full">
+                                <label className="text-xs text-gray-500 font-bold uppercase mb-1 block">Total Bankroll (KES)</label>
+                                <input
+                                    type="number"
+                                    placeholder="e.g. 10000"
+                                    defaultValue={profile?.bankroll || ""}
+                                    onBlur={async (e) => {
+                                        const val = parseFloat(e.target.value);
+                                        if (!isNaN(val) && user) {
+                                            await updateDoc(doc(db, "users", user.uid), { bankroll: val });
+                                            setProfile(prev => prev ? { ...prev, bankroll: val } : null);
+                                        }
+                                    }}
+                                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white font-mono focus:outline-none focus:border-emerald-500"
+                                />
+                            </div>
+                            <div className="text-xs text-gray-500 pb-2 sm:mb-0 mb-2">
+                                <p>We use the <strong>Kelly Criterion</strong> to calculate safe bet sizes based on this amount.</p>
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Transaction History */}
                     <div>
                         <h2 className="text-lg font-bold flex items-center gap-2 mb-4">
@@ -198,7 +224,7 @@ export default function ProfilePage() {
                     </div>
 
                 </div>
-            </div>
-        </div>
+            </div >
+        </div >
     );
 }

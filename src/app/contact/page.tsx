@@ -5,12 +5,6 @@ import { ChevronLeft, Send, CheckCircle, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { Metadata } from "next";
-
-export const metadata: Metadata = {
-    title: "Contact Us",
-    description: "Get in touch with the Funmo Tips team for support or inquiries.",
-};
 
 export default function ContactPage() {
     const { user } = useAuth();

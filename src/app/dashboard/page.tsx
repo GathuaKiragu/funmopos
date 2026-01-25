@@ -9,16 +9,9 @@ import { getFixturesClient as getFixtures, Fixture, Sport } from "@/lib/api-foot
 import { format, addDays, isSameDay, subDays } from "date-fns";
 import { Trophy, Activity, Calendar as CalendarIcon, ChevronRight, ChevronLeft, Lock, AlertTriangle, CheckCircle } from "lucide-react";
 import { PaymentModal } from "@/components/payment-modal";
-import { Metadata } from "next";
-
-export const metadata: Metadata = {
-    title: "My Dashboard",
-    description: "Access your premium tips and performance analytics.",
-    robots: {
-        index: false,
-        follow: false,
-    }
-};
+import { calculateStake } from "@/lib/bankroll";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
 
 export default function DashboardPage() {
     const { user, loading: authLoading } = useAuth();
@@ -35,10 +28,17 @@ export default function DashboardPage() {
     const [selectedLeague, setSelectedLeague] = useState<string>("all");
     const [onlyHighConfidence, setOnlyHighConfidence] = useState(false);
     const [selectedType, setSelectedType] = useState<string>("all");
+    const [bankroll, setBankroll] = useState<number>(0);
 
     useEffect(() => {
         if (!authLoading && !user) {
             router.push("/login");
+        } else if (user) {
+            getDoc(doc(db, "users", user.uid)).then(snap => {
+                if (snap.exists()) {
+                    setBankroll(snap.data().bankroll || 0);
+                }
+            });
         }
     }, [user, authLoading, router]);
 
@@ -96,11 +96,8 @@ export default function DashboardPage() {
         const isRisky = confidence < 35; // User requirement: Below 35% show no bet/risk
 
         const requiresTier = prediction?.requiresTier || "free";
-        // User can access if:
-        // 1. They have required tier 
-        // 2. OR it is a "No Bet" (Risky) - usually we warn everyone freely? 
-        // Let's stick to locking unless it's explicitly Free or Risky (if we want to show risk freely)
-        // User said "Only below 35% show no bet".
+
+        const smartStake = calculateStake(bankroll, confidence);
 
         const canView = canAccess(requiresTier) || isRisky;
         const isLocked = !canView && hasPrediction;
@@ -115,9 +112,16 @@ export default function DashboardPage() {
                         <span className="text-xs font-mono text-gray-400 uppercase truncate max-w-[150px]">{league.name}</span>
                     </div>
                     {hasPrediction && (
-                        <span className={`text-xs font-bold px-2 py-1 rounded border ${style.border} ${style.bg} ${style.color}`}>
-                            {confidence}%
-                        </span>
+                        <div className="flex flex-col items-end gap-1">
+                            <span className={`text-xs font-bold px-2 py-1 rounded border ${style.border} ${style.bg} ${style.color}`}>
+                                {confidence}%
+                            </span>
+                            {!isLocked && !isRisky && smartStake.amount > 0 && (
+                                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded border border-emerald-400/20">
+                                    Bet: KES {smartStake.amount}
+                                </span>
+                            )}
+                        </div>
                     )}
                 </div>
 
@@ -160,7 +164,7 @@ export default function DashboardPage() {
                                     <div className="flex flex-col items-center">
                                         <p className="text-xl font-bold text-red-500 mb-1">NO BET</p>
                                         <p className="text-xs text-red-400">
-                                            {confidence}% confidence level {prediction.picked}
+                                            {confidence}% confidence: {prediction.picked}
                                         </p>
                                     </div>
                                 ) : (
@@ -168,13 +172,16 @@ export default function DashboardPage() {
                                         <p className={`text-xl font-bold ${style.color}`}>
                                             {prediction.picked}
                                         </p>
-                                        <p className={`text-xs mt-1 ${style.color} opacity-80`}>
-                                            {confidence}% confidence level {homeTeam.name} will win
-                                            {/* Note: logic to map 'picked' to 'who will win' text needs refinement if picked is 'Over 2.5' etc. 
-                                                For now we display generic or just specific text if possible. 
-                                                User example: "32% confidence level team x will win" 
-                                             */}
+                                        <p className={`text-xs mt-1 ${style.color} opacity-80 mb-2`}>
+                                            {confidence}% confidence level
                                         </p>
+                                    </div>
+                                )}
+
+                                {prediction.reasoning && (
+                                    <div className="mt-3 pt-3 border-t border-white/5 text-xs text-left italic text-gray-300">
+                                        <span className="text-yellow-500 not-italic font-bold mr-1">AI Insight:</span>
+                                        {prediction.reasoning}
                                     </div>
                                 )}
                             </div>
