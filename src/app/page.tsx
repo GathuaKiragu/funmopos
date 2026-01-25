@@ -10,14 +10,30 @@ import { getFixturesClient as getFixtures, Fixture, Sport } from "@/lib/api-foot
 export default function Home() {
   const { user } = useAuth();
   const [selectedSport, setSelectedSport] = useState<Sport>("football");
-  const [fixtures, setFixtures] = useState<Fixture[]>([]);
+  const [freeFixtures, setFreeFixtures] = useState<Fixture[]>([]);
+  const [midFixtures, setMidFixtures] = useState<Fixture[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const loadFixtures = async () => {
       setLoading(true);
       const data = await getFixtures(new Date(), selectedSport);
-      setFixtures(data.slice(0, 3)); // Just show top 3
+
+      // Filter Free Games (Top 3)
+      const free = data
+        .filter(f => f.prediction?.requiresTier === 'free' || f.prediction?.isRisky)
+        .slice(0, 3);
+
+      // Filter Mid-Performing Games (Confidence 40-70%, Top 3)
+      const mid = data
+        .filter(f => {
+          const conf = f.prediction?.confidence || 0;
+          return conf >= 40 && conf <= 75 && !f.prediction?.isRisky;
+        })
+        .slice(0, 3);
+
+      setFreeFixtures(free.length > 0 ? free : data.slice(0, 3)); // Fallback if no specific free games found
+      setMidFixtures(mid);
       setLoading(false);
     };
     loadFixtures();
@@ -112,13 +128,13 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Live Ticker / Mock Data */}
+        {/* Free Games Section */}
         <section className="py-12 border-y border-white/5 bg-white/[0.02]">
           <div className="container mx-auto px-4">
             <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
               <div className="text-left max-w-md">
-                <h3 className="text-xl font-bold text-white mb-2">Today's Market Watch</h3>
-                <p className="text-sm text-gray-400 mb-6">Our AI is currently analyzing matches across multiple sports. Select a category to see high-confidence signals.</p>
+                <h3 className="text-xl font-bold text-white mb-2">Today's Free Picks</h3>
+                <p className="text-sm text-gray-400 mb-6">High-value opportunities available to everyone. Our AI has flagged these as strong starts.</p>
                 <div className="flex bg-white/5 p-1 rounded-lg border border-white/10 w-fit">
                   <button
                     onClick={() => setSelectedSport("football")}
@@ -140,26 +156,73 @@ export default function Home() {
                   <div className="col-span-full flex justify-center py-8">
                     <Activity className="w-6 h-6 animate-spin text-yellow-500" />
                   </div>
-                ) : fixtures.length > 0 ? (
-                  fixtures.map(fixture => (
+                ) : freeFixtures.length > 0 ? (
+                  freeFixtures.map(fixture => (
                     <Card
                       key={fixture.id}
                       league={fixture.league.name}
                       match={`${fixture.homeTeam.name} vs ${fixture.awayTeam.name}`}
                       prediction={fixture.prediction?.picked || "ANALYZING..."}
                       confidence={fixture.prediction?.confidence || 0}
-                      status={fixture.prediction?.isRisky ? 'nobet' : (fixture.prediction?.requiresTier === 'free' ? 'free' : 'locked')}
+                      status={fixture.prediction?.isRisky ? 'nobet' : 'free'}
                     />
                   ))
                 ) : (
                   <div className="col-span-full text-center py-8 text-gray-500 text-sm italic">
-                    All matches currently under internal review.
+                    No free picks available right now. Check back later!
                   </div>
                 )}
               </div>
             </div>
           </div>
         </section>
+
+        {/* Logged In: Mid-Performing Games */}
+        {user && (
+          <section className="py-12 border-b border-white/5 bg-black">
+            <div className="container mx-auto px-4">
+              <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
+                <div className="text-left max-w-md">
+                  <div className="flex items-center gap-2 mb-2">
+                    <h3 className="text-xl font-bold text-white">Member Insights</h3>
+                    <span className="px-2 py-0.5 rounded bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-[10px] font-bold uppercase">
+                      Exclusive
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-400">
+                    Mid-range confidence plays (40-75%) often hold the best value.
+                    <span className="text-gray-300 font-semibold block mt-1">
+                      Showing top 3 recommendations for you.
+                    </span>
+                  </p>
+                </div>
+
+                <div className="w-full lg:w-auto flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {loading ? (
+                    <div className="col-span-full flex justify-center py-8">
+                      <Activity className="w-6 h-6 animate-spin text-yellow-500" />
+                    </div>
+                  ) : midFixtures.length > 0 ? (
+                    midFixtures.map(fixture => (
+                      <Card
+                        key={fixture.id}
+                        league={fixture.league.name}
+                        match={`${fixture.homeTeam.name} vs ${fixture.awayTeam.name}`}
+                        prediction={fixture.prediction?.picked || "ANALYZING..."}
+                        confidence={fixture.prediction?.confidence || 0}
+                        status={'free'}
+                      />
+                    ))
+                  ) : (
+                    <div className="col-span-full text-center py-8 text-gray-500 text-sm italic">
+                      No mid-range opportunities currently identified.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* Features Grid */}
         <section className="py-24">
