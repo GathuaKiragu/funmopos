@@ -21,6 +21,20 @@ service cloud.firestore {
       allow write: if false; // Server-only via Admin SDK
     }
 
+    // Analytics Views
+    // Server-only writes for page view tracking
+    match /analytics_views/{viewId} {
+      allow read: if false; // Admin only
+      allow write: if false; // Server-only via Admin SDK
+    }
+
+    // Leads
+    // Server-only writes for lead tracking
+    match /leads/{leadId} {
+      allow read: if false; // Admin only
+      allow write: if false; // Server-only via Admin SDK
+    }
+
     // Default deny
     match /{document=**} {
       allow read, write: if false;
