@@ -1,6 +1,13 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
+import { Metadata } from "next";
+
+export const metadata: Metadata = {
+    title: "Privacy Policy",
+    description: "Learn how we collect, use, and protect your data.",
+};
+
 export default function PrivacyPage() {
     return (
         <div className="min-h-screen bg-black text-gray-300 font-sans selection:bg-yellow-500/30 p-6 md:p-12">

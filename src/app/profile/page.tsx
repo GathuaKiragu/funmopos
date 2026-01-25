@@ -19,6 +19,17 @@ interface UserProfile {
     tier: string;
 }
 
+import { Metadata } from "next";
+
+export const metadata: Metadata = {
+    title: "My Profile",
+    description: "Manage your account settings and subscription.",
+    robots: {
+        index: false,
+        follow: false,
+    }
+};
+
 export default function ProfilePage() {
     const { user, loading } = useAuth();
     const router = useRouter();

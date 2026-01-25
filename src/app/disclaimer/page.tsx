@@ -1,6 +1,13 @@
 import Link from "next/link";
 import { ArrowLeft, AlertTriangle } from "lucide-react";
 
+import { Metadata } from "next";
+
+export const metadata: Metadata = {
+    title: "Disclaimer",
+    description: "Important legal disclaimer regarding betting advice and financial risk.",
+};
+
 export default function DisclaimerPage() {
     return (
         <div className="min-h-screen bg-black text-gray-300 font-sans selection:bg-yellow-500/30 p-6 md:p-12">

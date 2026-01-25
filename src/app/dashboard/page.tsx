@@ -9,6 +9,16 @@ import { getFixturesClient as getFixtures, Fixture, Sport } from "@/lib/api-foot
 import { format, addDays, isSameDay, subDays } from "date-fns";
 import { Trophy, Activity, Calendar as CalendarIcon, ChevronRight, ChevronLeft, Lock, AlertTriangle, CheckCircle } from "lucide-react";
 import { PaymentModal } from "@/components/payment-modal";
+import { Metadata } from "next";
+
+export const metadata: Metadata = {
+    title: "My Dashboard",
+    description: "Access your premium tips and performance analytics.",
+    robots: {
+        index: false,
+        follow: false,
+    }
+};
 
 export default function DashboardPage() {
     const { user, loading: authLoading } = useAuth();

@@ -7,6 +7,12 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { signInWithEmailAndPassword, sendEmailVerification } from "firebase/auth";
 import { auth } from "@/lib/firebase";
+import { Metadata } from "next";
+
+export const metadata: Metadata = {
+    title: "Login",
+    description: "Sign in to Funmo Tips to access premium football predictions.",
+};
 
 export default function LoginPage() {
     const router = useRouter();
