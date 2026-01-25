@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { useEffect, useState } from "react";
 import { getFixturesClient as getFixtures, Fixture, Sport } from "@/lib/api-football";
+import { format } from "date-fns";
 
 export default function Home() {
   const { user } = useAuth();
@@ -162,6 +163,7 @@ export default function Home() {
                       key={fixture.id}
                       league={fixture.league.name}
                       match={`${fixture.homeTeam.name} vs ${fixture.awayTeam.name}`}
+                      date={fixture.date}
                       prediction={fixture.prediction?.picked || "ANALYZING..."}
                       confidence={fixture.prediction?.confidence || 0}
                       status={fixture.prediction?.isRisky ? 'nobet' : 'free'}
@@ -208,6 +210,7 @@ export default function Home() {
                         key={fixture.id}
                         league={fixture.league.name}
                         match={`${fixture.homeTeam.name} vs ${fixture.awayTeam.name}`}
+                        date={fixture.date}
                         prediction={fixture.prediction?.picked || "ANALYZING..."}
                         confidence={fixture.prediction?.confidence || 0}
                         status={'free'}
@@ -281,7 +284,7 @@ function Feature({ icon, title, description }: { icon: React.ReactNode, title: s
   );
 }
 
-function Card({ league, match, prediction, confidence, status }: { league: string, match: string, prediction: string, confidence: number, status: 'free' | 'locked' | 'nobet' }) {
+function Card({ league, match, date, prediction, confidence, status }: { league: string, match: string, date: string, prediction: string, confidence: number, status: 'free' | 'locked' | 'nobet' }) {
   const isLocked = status === 'locked';
   const isNoBet = status === 'nobet';
 
@@ -297,7 +300,12 @@ function Card({ league, match, prediction, confidence, status }: { league: strin
       )}
 
       <div className="flex justify-between items-start mb-4">
-        <span className="text-xs font-mono text-gray-500 uppercase">{league}</span>
+        <div className="flex flex-col">
+          <span className="text-xs font-mono text-gray-500 uppercase">{league}</span>
+          <span className="text-[10px] text-gray-600 font-mono mt-0.5">
+            {format(new Date(date), "MMM dd, HH:mm")}
+          </span>
+        </div>
         {isNoBet ? (
           <span className="text-xs font-bold text-red-500 border border-red-500/20 px-2 py-1 rounded bg-red-500/10">RISK DETECTED</span>
         ) : (
