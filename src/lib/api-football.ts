@@ -26,10 +26,14 @@ export interface Fixture {
         short: string;
         elapsed?: number | null;
     };
+    goals: {
+        home: number | null;
+        away: number | null;
+    };
     prediction?: {
         picked: string;
         confidence: number;
-        reasoning: string;
+        reasoning: string | string[]; // Backwards compatible
         type: "result" | "goals" | "score";
         isRisky: boolean;
         requiresTier: "free" | "basic" | "standard" | "vip";
@@ -79,7 +83,6 @@ const fetchFromApi = async (targetDate: Date, sport: Sport = "football"): Promis
             params: {
                 dateFrom,
                 dateTo
-                // Removed competitions param to ensure we get everything the token has access to
             },
             headers: {
                 'X-Auth-Token': API_KEY
@@ -126,6 +129,10 @@ const fetchFromApi = async (targetDate: Date, sport: Sport = "football"): Promis
                     short: mapStatus(match.status),
                     elapsed: null
                 },
+                goals: {
+                    home: match.score?.fullTime?.home ?? null,
+                    away: match.score?.fullTime?.away ?? null
+                },
                 prediction: null
             }));
 
@@ -167,13 +174,13 @@ const analyzeFixtures = async (fixtures: Fixture[]): Promise<Fixture[]> => {
         For each match, return:
         - picked: The predicted result (e.g., "Arsenal Win", "Over 2.5 Goals", "Draw")
         - confidence: A percentage (0-100) representing your confidence in the tip.
-        - reasoning: A short, punchy explanation (max 15 words) of WHY this prediction was made (e.g., "Home team unbeaten in 5", "Key striker injured").
+        - reasoning: An ARRAY of 2-3 short, punchy bullet points explaining WHY (e.g., ["Home team unbeaten in 5", "Key striker injured"]).
         - type: One of "result", "goals", or "score".
         - isRisky: Boolean, true if confidence is below 40%.
         - requiresTier: "free", "basic", "standard", or "vip". (Assign "vip" for high confidence top league matches, "free" for clear favorites).
 
         Return ONLY a JSON array in this format:
-        [{"id": number, "picked": string, "confidence": number, "reasoning": string, "type": "result"|"goals"|"score", "isRisky": boolean, "requiresTier": string}]
+        [{"id": number, "picked": string, "confidence": number, "reasoning": string[], "type": "result"|"goals"|"score", "isRisky": boolean, "requiresTier": string}]
 
         Matches to analyze:
         ${JSON.stringify(fixturesData)}
@@ -208,7 +215,7 @@ const analyzeFixtures = async (fixtures: Fixture[]): Promise<Fixture[]> => {
                     prediction: {
                         picked: pred.picked,
                         confidence: pred.confidence,
-                        reasoning: pred.reasoning || "AI analysis based on recent form and stats.", // Fallback
+                        reasoning: pred.reasoning || ["AI analysis based on recent form and stats."],
                         type: pred.type,
                         isRisky: pred.isRisky,
                         requiresTier: pred.requiresTier
@@ -278,16 +285,16 @@ export const getFixtures = async (
     }
 
     // 3. Past Game Filtering
+    let results = fixtures;
     if (!showPast) {
-        return fixtures.filter(f => {
+        results = fixtures.filter(f => {
             const matchDate = new Date(f.date);
-            // Simpler check: Match start time vs real current time
-            // Both are global/UTC timestamps, so it works anywhere
             return matchDate.getTime() > (new Date().getTime() - (15 * 60000));
         });
     }
 
-    return fixtures;
+    // Default Sort: Chronological (Earliest first)
+    return results.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 };
 
 /**

@@ -7,72 +7,81 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { PaystackButton } from "react-paystack";
 import { doc, updateDoc, setDoc, collection, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { Check, X } from "lucide-react";
+import { Check, X, RefreshCw } from "lucide-react";
+import { useLocation } from "@/hooks/useLocation";
 
 interface PaymentModalProps {
     children?: React.ReactNode;
 }
 
-const TIERS = [
-    {
-        id: "basic",
-        name: "Basic Access",
-        price: 100,
-        features: ["Limited predictions", "No correct scores", "Valid until 23:59 EAT"],
+const PRICING = {
+    KES: {
+        symbol: "KES",
+        tiers: [
+            { id: "basic", price: 100 },
+            { id: "standard", price: 250 },
+            { id: "vip", price: 500 }
+        ]
     },
-    {
-        id: "standard",
-        name: "Standard Access",
-        price: 250,
-        features: ["All match predictions", "Correct Scores", "Valid until 23:59 EAT"],
-        recommended: true,
-    },
-    {
-        id: "vip",
-        name: "VIP Access",
-        price: 500,
-        features: ["Early Access Tips", "Highest Confidence Only", "Direct Alerts", "Valid until 23:59 EAT"],
-    },
-];
+    USD: {
+        symbol: "$",
+        tiers: [
+            { id: "basic", price: 3 },
+            { id: "standard", price: 8 },
+            { id: "vip", price: 15 }
+        ]
+    }
+};
+
+const FEATURES = {
+    basic: ["Limited predictions", "No correct scores", "Valid until 23:59 EAT"],
+    standard: ["All match predictions", "Correct Scores", "Valid until 23:59 EAT"],
+    vip: ["Early Access Tips", "Highest Confidence Only", "Direct Alerts", "Valid until 23:59 EAT"]
+};
+
+const TIER_NAMES = {
+    basic: "Basic Access",
+    standard: "Standard Access",
+    vip: "VIP Access"
+};
 
 export function PaymentModal({ children }: PaymentModalProps) {
     const { user } = useAuth();
+    const { currency, loading: locLoading, toggleCurrency } = useLocation();
     const [selectedTier, setSelectedTier] = useState<string | null>("standard");
     const [isOpen, setIsOpen] = useState(false);
     const [success, setSuccess] = useState(false);
 
     // Paystack Config
-    // NOTE: Using a Test Public Key for now if variable is missing, but should be in .env.local
     const publicKey = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || "pk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+
+    const getPrice = (tierId: string) => {
+        const config = PRICING[currency];
+        return config.tiers.find(t => t.id === tierId)?.price || 0;
+    };
 
     const handleSuccess = async (reference: any) => {
         if (!user || !selectedTier) return;
 
         try {
-            // Optimistic Update: Grant access immediately
-            // In production, this should be verified by a webhook
             const userRef = doc(db, "users", user.uid);
-
-            // Calculate Expiry: End of TODAY (EAT is UTC+3)
-            // Simple logic: Set to 23:59:59 of current day local time approx
             const now = new Date();
             const expiry = new Date(now);
             expiry.setHours(23, 59, 59, 999);
 
-            // CHANGED: updateDoc -> setDoc with merge: true to avoid "No document to update" error
             await setDoc(userRef, {
                 subscriptionStatus: "active",
                 tier: selectedTier,
-                subscriptionExpiry: expiry, // Store as Timestamp
+                subscriptionExpiry: expiry,
                 lastPaymentRef: reference.reference,
                 updatedAt: serverTimestamp()
             }, { merge: true });
 
-            // NEW: Log Transaction
             const txRef = doc(collection(db, "transactions"));
             await setDoc(txRef, {
                 userId: user.uid,
-                amount: (currentTier?.price || 0),
+                amount: getPrice(selectedTier),
+                currency: currency,
                 tier: selectedTier,
                 reference: reference.reference,
                 status: "success",
@@ -84,7 +93,7 @@ export function PaymentModal({ children }: PaymentModalProps) {
             setTimeout(() => {
                 setIsOpen(false);
                 setSuccess(false);
-                window.location.reload(); // Force reload to reflect changes
+                window.location.reload();
             }, 2000);
 
         } catch (error) {
@@ -93,20 +102,24 @@ export function PaymentModal({ children }: PaymentModalProps) {
     };
 
     const handleClose = () => {
-        // Prevent closing if we are in a success state
         if (!success) return;
-        // Actually we use this for the paystack close action
         console.log("Payment closed");
     };
 
-    const currentTier = TIERS.find(t => t.id === selectedTier);
+    const currentPrice = selectedTier ? getPrice(selectedTier) : 0;
+    const currentSymbol = PRICING[currency].symbol;
+
+    // Paystack Amount Logic:
+    // If USD, Paystack uses cents? Actually Paystack international usually charges in local currency or USD if enabled.
+    // For simplicity, we pass strict amounts. Warning: USD support on Paystack needs specific activation.
+    // We assume the account supports it.
 
     const componentProps = {
         email: user?.email || "user@example.com",
-        amount: (currentTier?.price || 0) * 100, // Paystack expects kobo/cents
-        currency: "KES",
+        amount: currentPrice * 100, // Always cents/kobo
+        currency: currency,
         publicKey,
-        text: `Pay KES ${currentTier?.price}`,
+        text: `Pay ${currentSymbol}${currentPrice}`,
         onSuccess: handleSuccess,
         onClose: handleClose,
     };
@@ -135,49 +148,64 @@ export function PaymentModal({ children }: PaymentModalProps) {
                         <p className="text-white mt-2">Your dashboard has been unlocked.</p>
                     </div>
                 ) : (
-                    <div className="grid md:grid-cols-3 gap-4 mt-6">
-                        {TIERS.map((tier) => (
-                            <div
-                                key={tier.id}
-                                onClick={() => setSelectedTier(tier.id)}
-                                className={`cursor-pointer relative p-4 rounded-xl border-2 transition-all ${selectedTier === tier.id
-                                    ? "border-yellow-500 bg-yellow-500/10"
-                                    : "border-white/10 bg-white/5 hover:border-white/20"
-                                    }`}
+                    <div className="flex flex-col">
+                        <div className="flex justify-end mb-4">
+                            <button
+                                onClick={toggleCurrency}
+                                className="flex items-center gap-1.5 text-[10px] uppercase font-bold text-gray-400 hover:text-white transition-colors bg-white/5 px-2 py-1 rounded"
                             >
-                                {tier.recommended && (
-                                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-yellow-500 text-black text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
-                                        Best Value
-                                    </div>
-                                )}
-                                <h3 className="font-bold text-lg text-center mb-2">{tier.name}</h3>
-                                <p className="text-2xl font-bold text-center text-yellow-500 mb-4">
-                                    KES {tier.price} <span className="text-xs text-gray-400 font-normal">/day</span>
-                                </p>
-                                <ul className="space-y-2 mb-6">
-                                    {tier.features.map((feature, i) => (
-                                        <li key={i} className="text-xs text-gray-300 flex items-start gap-1.5">
-                                            <Check className="w-3 h-3 text-emerald-500 mt-0.5 shrink-0" />
-                                            {feature}
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        ))}
-                    </div>
-                )}
+                                <RefreshCw className="w-3 h-3" />
+                                Switch to {currency === 'KES' ? 'USD' : 'KES'}
+                            </button>
+                        </div>
 
-                {!success && (
-                    <div className="flex justify-center mt-6">
-                        <PaystackButton
-                            {...componentProps}
-                            className="w-full max-w-sm bg-yellow-500 hover:bg-yellow-400 text-black font-bold py-3 rounded-md transition-colors disabled:opacity-50"
-                        />
+                        <div className="grid md:grid-cols-3 gap-4">
+                            {['basic', 'standard', 'vip'].map((tierId) => {
+                                const price = getPrice(tierId);
+                                const isBestValue = tierId === 'standard';
+
+                                return (
+                                    <div
+                                        key={tierId}
+                                        onClick={() => setSelectedTier(tierId)}
+                                        className={`cursor-pointer relative p-4 rounded-xl border-2 transition-all ${selectedTier === tierId
+                                            ? "border-yellow-500 bg-yellow-500/10"
+                                            : "border-white/10 bg-white/5 hover:border-white/20"
+                                            }`}
+                                    >
+                                        {isBestValue && (
+                                            <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-yellow-500 text-black text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+                                                Best Value
+                                            </div>
+                                        )}
+                                        <h3 className="font-bold text-lg text-center mb-2">{TIER_NAMES[tierId as keyof typeof TIER_NAMES]}</h3>
+                                        <p className="text-2xl font-bold text-center text-yellow-500 mb-4">
+                                            {currentSymbol} {price} <span className="text-xs text-gray-400 font-normal">/day</span>
+                                        </p>
+                                        <ul className="space-y-2 mb-6">
+                                            {FEATURES[tierId as keyof typeof FEATURES].map((feature, i) => (
+                                                <li key={i} className="text-xs text-gray-300 flex items-start gap-1.5">
+                                                    <Check className="w-3 h-3 text-emerald-500 mt-0.5 shrink-0" />
+                                                    {feature}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        <div className="flex justify-center mt-6">
+                            <PaystackButton
+                                {...componentProps}
+                                className="w-full max-w-sm bg-yellow-500 hover:bg-yellow-400 text-black font-bold py-3 rounded-md transition-colors disabled:opacity-50"
+                            />
+                        </div>
                     </div>
                 )}
 
                 <p className="text-[10px] text-center text-gray-500 mt-4">
-                    Secured by Paystack. No automatic renewals. M-Pesa Supported.
+                    Secured by Paystack. No automatic renewals. M-Pesa & Cards Supported.
                 </p>
             </DialogContent>
         </Dialog>

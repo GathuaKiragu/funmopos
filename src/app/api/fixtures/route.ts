@@ -6,6 +6,7 @@ export async function GET(request: Request) {
     const dateStr = searchParams.get("date");
     const sport = (searchParams.get("sport") || "football") as Sport;
     const showPast = searchParams.get("showPast") === "true";
+    const refresh = searchParams.get("refresh") === "true";
 
     if (!dateStr) {
         return NextResponse.json({ error: "Missing date parameter" }, { status: 400 });
@@ -18,7 +19,7 @@ export async function GET(request: Request) {
         }
 
         // The library already handles Cache Hit -> Cache Miss -> Fetch -> Analyze -> Save
-        const fixtures = await getFixtures(date, sport, showPast);
+        const fixtures = await getFixtures(date, sport, showPast, refresh);
 
         return NextResponse.json({ fixtures });
     } catch (error: any) {

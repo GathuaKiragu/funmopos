@@ -19,7 +19,8 @@ export default function Home() {
   useEffect(() => {
     const loadFixtures = async () => {
       setLoading(true);
-      const data = await getFixtures(new Date(), selectedSport);
+      // Show past games so users can see results/wins for "today"
+      const data = await getFixtures(new Date(), selectedSport, true);
 
       // Filter Free Games (Top 3)
       const free = data
@@ -295,7 +296,7 @@ export default function Home() {
                   <Activity className="w-8 h-8 animate-spin text-yellow-500" />
                 </div>
               ) : freeFixtures.length > 0 ? (
-                freeFixtures.map(fixture => (
+                freeFixtures.map((fixture, index) => (
                   <Card
                     key={fixture.id}
                     league={fixture.league.name}
@@ -305,6 +306,7 @@ export default function Home() {
                     confidence={fixture.prediction?.confidence || 0}
                     reasoning={fixture.prediction?.reasoning}
                     status={fixture.prediction?.isRisky ? 'nobet' : 'free'}
+                    isTeaserLocked={!user && index > 0} // Lock 2nd and 3rd card for guests
                   />
                 ))
               ) : (
@@ -422,18 +424,39 @@ function Feature({ icon, title, description }: { icon: React.ReactNode, title: s
   );
 }
 
-function Card({ league, match, date, prediction, confidence, reasoning, status }: { league: string, match: string, date: string, prediction: string, confidence: number, reasoning?: string, status: 'free' | 'locked' | 'nobet' }) {
+function Card({ league, match, date, prediction, confidence, reasoning, status, isTeaserLocked }: { league: string, match: string, date: string, prediction: string, confidence: number, reasoning?: string | string[], status: 'free' | 'locked' | 'nobet', isTeaserLocked?: boolean }) {
   const isLocked = status === 'locked';
   const isNoBet = status === 'nobet';
+  const showTeaserGate = isTeaserLocked && !isLocked;
+
+  // Normalize reasoning to array for rendering
+  const reasoningPoints = Array.isArray(reasoning) ? reasoning : (reasoning ? [reasoning] : []);
 
   return (
-    <div className={`relative p-4 rounded-xl border ${isNoBet ? 'border-red-500/20 bg-red-900/5' : 'border-white/10 bg-white/5'} flex flex-col justify-between`}>
+    <div className={`relative p-4 rounded-xl border ${isNoBet ? 'border-red-500/20 bg-red-900/5' : 'border-white/10 bg-white/5'} flex flex-col justify-between overflow-hidden group`}>
+
+      {/* Premium Lock Overlay (Hard Gate) */}
       {isLocked && (
         <div className="absolute inset-0 bg-white/5 backdrop-blur-md rounded-xl flex items-center justify-center z-10 border border-white/5">
           <div className="flex flex-col items-center gap-2">
             <Lock className="w-6 h-6 text-yellow-500" />
             <span className="text-xs font-bold text-white tracking-widest uppercase">Premium Only</span>
           </div>
+        </div>
+      )}
+
+      {/* Teaser Lock Overlay (Soft Gate - Signup Required) */}
+      {showTeaserGate && (
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-[6px] flex flex-col items-center justify-center z-20 text-center p-4 animate-in fade-in duration-500">
+          <Lock className="w-8 h-8 text-yellow-500 mb-2 drop-shadow-glow" />
+          <h4 className="text-white font-bold text-lg mb-1">High Value Tip</h4>
+          <p className="text-gray-300 text-xs mb-4 max-w-[200px]">Create a <span className="text-white font-bold">Free Account</span> to reveal this prediction instantly.</p>
+          <Link href="/signup" className="w-full">
+            <Button size="sm" className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-bold shadow-lg shadow-yellow-500/20">
+              Reveal Now (Free)
+            </Button>
+          </Link>
+          <p className="text-[10px] text-gray-500 mt-2">No credit card required.</p>
         </div>
       )}
 
@@ -463,9 +486,19 @@ function Card({ league, match, date, prediction, confidence, reasoning, status }
           </span>
         </div>
 
-        {reasoning && !isLocked && (
-          <div className="bg-white/5 p-2 rounded border border-white/5 text-xs text-gray-300 italic">
-            <span className="text-yellow-500 not-italic mr-1">💡</span> {reasoning}
+        {reasoningPoints.length > 0 && !isLocked && (
+          <div className="mt-3 pt-3 border-t border-white/5">
+            <div className="flex items-center gap-1 mb-1.5">
+              <span className="text-yellow-500 text-xs">💡</span>
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-wide">Analysis</span>
+            </div>
+            <ul className="space-y-1">
+              {reasoningPoints.map((point, i) => (
+                <li key={i} className="flex items-start gap-2 text-xs text-gray-300">
+                  <span className="text-yellow-500/50 mt-1">•</span> {point}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </div>

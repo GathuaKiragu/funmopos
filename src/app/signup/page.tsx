@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from "firebase/auth";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
@@ -108,13 +108,20 @@ export default function SignupPage() {
 
             <div className="w-full max-w-md space-y-8">
                 <div className="text-center">
-                    <h1 className="text-3xl font-bold tracking-tight">Create an account</h1>
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-xs font-bold uppercase tracking-wide mb-4">
+                        <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-yellow-500"></span>
+                        </span>
+                        High Value Tips Pending
+                    </div>
+                    <h1 className="text-3xl font-bold tracking-tight text-white">Unlock Today's<br /><span className="text-yellow-500">Winning Tips</span></h1>
                     <p className="mt-2 text-sm text-gray-400">
-                        Join the premium community of smart investors
+                        Create your free account to reveal the hidden high-confidence plays instantly.
                     </p>
                 </div>
 
-                <div className="space-y-4 p-8 bg-white/5 border border-white/10 rounded-xl backdrop-blur-sm">
+                <div className="space-y-4 p-8 bg-white/5 border border-white/10 rounded-xl backdrop-blur-sm shadow-xl">
                     {error && (
                         <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-500 text-sm rounded-md">
                             {error}
@@ -146,16 +153,18 @@ export default function SignupPage() {
                     </div>
 
                     <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-300">Phone Number</label>
+                        <label className="text-sm font-medium text-gray-300 flex items-center justify-between">
+                            Phone Number
+                            <span className="text-[10px] text-green-500 font-bold uppercase tracking-wide bg-green-500/10 px-1.5 py-0.5 rounded">For Winning Alerts</span>
+                        </label>
                         <input
                             name="phone"
                             type="tel"
                             value={formData.phone}
                             onChange={handleChange}
                             className="w-full bg-black/50 border border-white/10 rounded-md px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50"
-                            placeholder="0712345678 or +254712345678"
+                            placeholder="0712345678"
                         />
-                        <p className="text-xs text-gray-500">For payment verification and alerts</p>
                     </div>
 
                     <div className="space-y-2">
@@ -214,6 +223,11 @@ export default function SignupPage() {
                             Log in
                         </Link>
                     </p>
+
+                    <div className="pt-4 border-t border-white/5 flex items-center justify-center gap-2 text-gray-500">
+                        <ShieldCheck className="w-3 h-3" />
+                        <span className="text-[10px] uppercase tracking-wider font-bold">Bank-Level Security • No Spam Guarantee</span>
+                    </div>
                 </div>
             </div>
         </div>

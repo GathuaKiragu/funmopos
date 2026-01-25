@@ -45,7 +45,7 @@ export default function DashboardPage() {
     useEffect(() => {
         const loadData = async () => {
             setLoadingFixtures(true);
-            const data = await getFixtures(selectedDate, selectedSport);
+            const data = await getFixtures(selectedDate, selectedSport, true);
             setFixtures(data);
             setLoadingFixtures(false);
         };
@@ -79,9 +79,35 @@ export default function DashboardPage() {
         );
     }
 
+    const finishedStates = ['FT', 'AET', 'PEN'];
+
+    // Split filtered fixtures
+    const activeFixtures = filteredFixtures.filter(f => !finishedStates.includes(f.status?.short || ''));
+    const finishedFixtures = filteredFixtures.filter(f => finishedStates.includes(f.status?.short || ''));
+
     // Helper to Render a Tip Card
     const TipCard = ({ fixture }: { fixture: Fixture }) => {
-        const { prediction, homeTeam, awayTeam, league, date } = fixture;
+        const { prediction, homeTeam, awayTeam, league, date, status, goals } = fixture;
+        const isFinished = finishedStates.includes(status?.short || '');
+        const isLive = ['1H', 'HT', '2H', 'ET', 'P', 'LIVE'].includes(status?.short || '');
+
+        // Determine if prediction won or lost
+        let result: 'WON' | 'LOST' | 'VOID' | null = null;
+        if (isFinished && prediction && goals?.home != null && goals?.away != null) {
+            const h = goals.home;
+            const a = goals.away;
+            const p = prediction.picked.toLowerCase();
+
+            // Simple Logic for 1X2
+            if (p.includes("home") || p.includes(homeTeam.name.toLowerCase()) || p.includes("1")) {
+                result = h > a ? 'WON' : 'LOST';
+            } else if (p.includes("away") || p.includes(awayTeam.name.toLowerCase()) || p.includes("2")) {
+                result = a > h ? 'WON' : 'LOST';
+            } else if (p.includes("draw") || p.includes("x")) {
+                result = h === a ? 'WON' : 'LOST';
+            }
+            // For now only supporting 1X2 basic check, others default to null (no badge)
+        }
 
         // Logic for Colors
         const getConfidenceStyle = (conf: number) => {
@@ -93,12 +119,10 @@ export default function DashboardPage() {
         const hasPrediction = !!prediction;
         const confidence = prediction?.confidence || 0;
         const style = getConfidenceStyle(confidence);
-        const isRisky = confidence < 35; // User requirement: Below 35% show no bet/risk
+        const isRisky = confidence < 35;
 
         const requiresTier = prediction?.requiresTier || "free";
-
         const smartStake = calculateStake(bankroll, confidence);
-
         const canView = canAccess(requiresTier) || isRisky;
         const isLocked = !canView && hasPrediction;
 
@@ -108,21 +132,55 @@ export default function DashboardPage() {
                 {/* Header */}
                 <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-2">
+                        {league.flag && <img src={league.flag} alt="Country" className="w-4 h-4 rounded-full object-cover border border-white/20" />}
                         {league.logo && <img src={league.logo} alt={league.name} className="w-6 h-6 object-contain" />}
                         <span className="text-xs font-mono text-gray-400 uppercase truncate max-w-[150px]">{league.name}</span>
                     </div>
-                    {hasPrediction && (
-                        <div className="flex flex-col items-end gap-1">
-                            <span className={`text-xs font-bold px-2 py-1 rounded border ${style.border} ${style.bg} ${style.color}`}>
+
+                    {/* Status Badge */}
+                    <div className="flex flex-col items-end gap-1">
+                        {isLive ? (
+                            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-red-500/20 text-red-500 text-[10px] font-bold uppercase animate-pulse">
+                                <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span> Live
+                            </span>
+                        ) : isFinished ? (
+                            <span className="px-2 py-0.5 rounded bg-white/10 text-gray-400 text-[10px] font-bold uppercase">
+                                FT
+                            </span>
+                        ) : (
+                            <div className="flex flex-col items-end">
+                                <span className="px-2 py-0.5 rounded bg-yellow-500/10 text-yellow-500 text-[10px] font-bold font-mono">
+                                    {format(new Date(date), "HH:mm")}
+                                </span>
+                                {/* Urgency Countdown */}
+                                {(() => {
+                                    const diff = new Date(date).getTime() - new Date().getTime();
+                                    const minutes = Math.floor(diff / 60000);
+                                    if (minutes > 0 && minutes < 120) {
+                                        return (
+                                            <span className="text-[9px] text-orange-400 font-bold mt-0.5">
+                                                In {minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`}
+                                            </span>
+                                        );
+                                    }
+                                    return null;
+                                })()}
+                            </div>
+                        )}
+
+                        {hasPrediction && !isFinished && confidence > 0 && (
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${style.border} ${style.bg} ${style.color}`}>
                                 {confidence}%
                             </span>
-                            {!isLocked && !isRisky && smartStake.amount > 0 && (
-                                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded border border-emerald-400/20">
-                                    Bet: KES {smartStake.amount}
-                                </span>
-                            )}
-                        </div>
-                    )}
+                        )}
+
+                        {/* Smart Stake - Only show if active and unlocked */}
+                        {!isLocked && !isRisky && !isFinished && smartStake.amount > 0 && (
+                            <span className="text-[10px] font-mono text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded border border-emerald-400/20">
+                                Bet: KES {smartStake.amount}
+                            </span>
+                        )}
+                    </div>
                 </div>
 
                 {/* Match Info */}
@@ -132,15 +190,20 @@ export default function DashboardPage() {
                             <span className="text-lg font-bold block">{homeTeam.name}</span>
                         </div>
                         <div className="flex flex-col items-center gap-1">
-                            <span className="text-gray-500 text-xs font-mono font-bold">VS</span>
-                            <span className="text-xs text-gray-600 font-mono">{format(new Date(date), "HH:mm")}</span>
+                            {isFinished && goals ? (
+                                <div className="bg-white/10 px-3 py-1 rounded text-white font-mono font-bold text-lg tracking-widest">
+                                    {goals.home} - {goals.away}
+                                </div>
+                            ) : (
+                                <span className="text-gray-500 text-xs font-mono font-bold">VS</span>
+                            )}
                         </div>
                         <div className="flex-1 text-left">
                             <span className="text-lg font-bold block">{awayTeam.name}</span>
                         </div>
                     </div>
                     <p className="text-xs text-center text-gray-500 font-medium">
-                        {format(new Date(date), "MMM dd, yyyy 'at' HH:mm")} EAT
+                        {format(new Date(date), "MMM dd")}
                     </p>
                 </div>
 
@@ -156,7 +219,17 @@ export default function DashboardPage() {
                     </div>
                 ) : (
                     /* Prediction Content */
-                    <div className={`p-4 rounded-lg border text-center ${style.border} ${style.bg} bg-opacity-20`}>
+                    <div className={`p-4 rounded-lg border text-center ${style.border} ${style.bg} bg-opacity-20 relative overflow-hidden`}>
+                        {/* Result Stamp */}
+                        {result && (
+                            <div className={`absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${result === 'WON'
+                                ? 'bg-emerald-500/20 text-emerald-500 border-emerald-500/50'
+                                : 'bg-red-500/20 text-red-500 border-red-500/50'
+                                }`}>
+                                {result === 'WON' ? '✅ Won' : '❌ Lost'}
+                            </div>
+                        )}
+
                         <p className="text-gray-400 text-xs uppercase tracking-widest mb-1">AI Prediction</p>
                         {hasPrediction ? (
                             <div>
@@ -169,7 +242,7 @@ export default function DashboardPage() {
                                     </div>
                                 ) : (
                                     <div className="flex flex-col items-center">
-                                        <p className={`text-xl font-bold ${style.color}`}>
+                                        <p className={`text-xl font-bold ${style.color} ${result === 'LOST' ? 'line-through opacity-50' : ''}`}>
                                             {prediction.picked}
                                         </p>
                                         <p className={`text-xs mt-1 ${style.color} opacity-80 mb-2`}>
@@ -179,9 +252,18 @@ export default function DashboardPage() {
                                 )}
 
                                 {prediction.reasoning && (
-                                    <div className="mt-3 pt-3 border-t border-white/5 text-xs text-left italic text-gray-300">
-                                        <span className="text-yellow-500 not-italic font-bold mr-1">AI Insight:</span>
-                                        {prediction.reasoning}
+                                    <div className="mt-3 pt-3 border-t border-white/5">
+                                        <div className="flex items-center gap-1 mb-1.5">
+                                            <span className="text-yellow-500 text-xs">💡</span>
+                                            <span className="text-xs font-bold text-gray-400 uppercase tracking-wide">Analysis</span>
+                                        </div>
+                                        <ul className="space-y-1 text-left">
+                                            {(Array.isArray(prediction.reasoning) ? prediction.reasoning : [prediction.reasoning]).map((point, i) => (
+                                                <li key={i} className="flex items-start gap-2 text-xs text-gray-300 italic">
+                                                    <span className="text-yellow-500/50 not-italic mt-0.5">•</span> {point}
+                                                </li>
+                                            ))}
+                                        </ul>
                                     </div>
                                 )}
                             </div>
@@ -203,8 +285,6 @@ export default function DashboardPage() {
             setSelectedDate(date);
         }
     };
-
-    // const isToday = isSameDay(selectedDate, new Date());
 
     return (
         <div className="min-h-screen bg-black text-white p-6 md:p-12">
@@ -360,10 +440,41 @@ export default function DashboardPage() {
                     <p>Analyzing market data...</p>
                 </div>
             ) : filteredFixtures.length > 0 ? (
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {filteredFixtures.map((fixture) => (
-                        <TipCard key={fixture.id} fixture={fixture} />
-                    ))}
+                <div className="space-y-12">
+                    {/* Active / Future Games */}
+                    {(activeFixtures.length > 0 || finishedFixtures.length === 0) && (
+                        <section>
+                            <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                                Live & Upcoming Actions
+                            </h2>
+                            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {activeFixtures.map((fixture) => (
+                                    <TipCard key={fixture.id} fixture={fixture} />
+                                ))}
+                                {activeFixtures.length === 0 && (
+                                    <div className="col-span-full py-8 text-center text-gray-500 text-sm italic">
+                                        No upcoming matches scheduled for this selection. Check results below.
+                                    </div>
+                                )}
+                            </div>
+                        </section>
+                    )}
+
+                    {/* Finished Results */}
+                    {finishedFixtures.length > 0 && (
+                        <section className="opacity-75">
+                            <div className="flex items-center gap-2 mb-6 pt-8 border-t border-white/5">
+                                <h2 className="text-xl font-bold text-gray-300">Today's Results</h2>
+                                <span className="px-2 py-0.5 rounded bg-gray-800 text-gray-400 text-xs font-bold uppercase">Finished</span>
+                            </div>
+                            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {finishedFixtures.map((fixture) => (
+                                    <TipCard key={fixture.id} fixture={fixture} />
+                                ))}
+                            </div>
+                        </section>
+                    )}
                 </div>
             ) : (
                 <div className="text-center py-24 bg-white/5 rounded-2xl border border-white/5 border-dashed">
@@ -390,7 +501,6 @@ export default function DashboardPage() {
                     </Button>
                 </div>
             )}
-
         </div>
     );
 }
