@@ -3,80 +3,87 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Phone, ShieldCheck, Lock } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { signInWithEmailAndPassword, sendEmailVerification } from "firebase/auth";
+import { signInWithCustomToken } from "firebase/auth";
 import { auth } from "@/lib/firebase";
+import axios from "axios";
 
 export default function LoginPage() {
     const router = useRouter();
-    const [formData, setFormData] = useState({
-        email: "",
-        password: "",
-    });
+    const [step, setStep] = useState<"PHONE" | "OTP">("PHONE");
+    const [phone, setPhone] = useState("");
+    const [otp, setOtp] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
-    const [needsVerification, setNeedsVerification] = useState(false);
-    const [resendingEmail, setResendingEmail] = useState(false);
+    const [successMsg, setSuccessMsg] = useState("");
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const { name, value } = e.target;
-        setFormData((prev) => ({
-            ...prev,
-            [name]: value,
-        }));
-    };
+    // Captcha State
+    const [captchaVerified, setCaptchaVerified] = useState(false);
 
-    const handleLogin = async () => {
+    const handleSendOtp = async (e: React.FormEvent) => {
+        e.preventDefault();
         setError("");
 
-        if (!formData.email || !formData.password) {
-            setError("Please enter your email and password.");
+        if (!phone) {
+            setError("Please enter your phone number.");
+            return;
+        }
+
+        if (!captchaVerified) {
+            setError("Please confirm you are not a robot.");
             return;
         }
 
         setLoading(true);
 
         try {
-            const userCredential = await signInWithEmailAndPassword(auth, formData.email, formData.password);
-            const user = userCredential.user;
-
-            // Check if email is verified
-            if (!user.emailVerified) {
-                setNeedsVerification(true);
-                setError("Please verify your email before logging in. Check your inbox/spam folder for the verification link.");
-                setLoading(false);
-                return;
-            }
-
-            router.push("/");
+            // Call API to send OTP
+            await axios.post("/api/auth/send-otp", { phone });
+            setStep("OTP");
+            setSuccessMsg("Code sent! Check your SMS.");
         } catch (err: any) {
-            console.error("Login Error:", err);
-            if (err.code === "auth/invalid-credential" || err.code === "auth/user-not-found" || err.code === "auth/wrong-password") {
-                setError("Invalid email or password.");
-            } else if (err.code === "auth/too-many-requests") {
-                setError("Too many attempts. Please try again later.");
-            } else {
-                setError("Failed to log in. Please try again.");
-            }
+            console.error("OTP Error:", err);
+            setError(err.response?.data?.error || "Failed to send code. Try again.");
         } finally {
             setLoading(false);
         }
     };
 
-    const handleResendVerification = async () => {
-        if (!auth.currentUser) return;
+    const handleVerifyOtp = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError("");
 
-        setResendingEmail(true);
+        if (!otp) {
+            setError("Please enter the code.");
+            return;
+        }
+
+        setLoading(true);
+
         try {
-            await sendEmailVerification(auth.currentUser);
-            setError("");
-            alert("Verification email sent! Please check your inbox.");
-        } catch (err) {
-            console.error("Resend error:", err);
-            setError("Failed to resend verification email. Please try again.");
+            // Call API to verify OTP
+            const res = await axios.post("/api/auth/verify-otp", {
+                phone,
+                otp,
+                name: "Returning User" // We don't ask for name on login
+            });
+
+            const { token } = res.data;
+
+            if (token) { // Use 'token' directly as it's destructured from res.data
+                await signInWithCustomToken(auth, token);
+                // Force router refresh and fast redirect
+                router.refresh();
+                router.replace("/dashboard");
+            } else {
+                setError(res.data.error || "Failed to verify OTP"); // Use res.data.error
+            }
+        } catch (err: any) {
+            console.error("Verify Error:", err);
+            setError(err.response?.data?.error || "Invalid code.");
         } finally {
-            setResendingEmail(false);
+            setLoading(false);
         }
     };
 
@@ -89,89 +96,104 @@ export default function LoginPage() {
 
             <div className="w-full max-w-md space-y-8">
                 <div className="text-center">
-                    <h1 className="text-3xl font-bold tracking-tight">Welcome back</h1>
+                    <h1 className="text-3xl font-black tracking-tight uppercase italic">Welcome <span className="text-yellow-500">Back</span></h1>
                     <p className="mt-2 text-sm text-gray-400">
-                        Sign in to your account to access premium methods
+                        {step === "PHONE" ? "Enter your phone number to access your picks." : "Enter the 6-digit code sent to your phone."}
                     </p>
                 </div>
 
-                <div className="space-y-4 p-8 bg-white/5 border border-white/10 rounded-xl backdrop-blur-sm">
+                <div className="p-8 bg-white/5 border border-white/10 rounded-xl backdrop-blur-sm shadow-xl relative">
+
                     {error && (
-                        <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-500 text-sm rounded-md">
+                        <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-500 text-sm rounded-md font-medium">
                             {error}
                         </div>
                     )}
 
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-300">Email</label>
-                        <input
-                            name="email"
-                            type="email"
-                            value={formData.email}
-                            onChange={handleChange}
-                            className="w-full bg-black/50 border border-white/10 rounded-md px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50"
-                            placeholder="name@example.com"
-                        />
-                    </div>
-
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-300">Password</label>
-                        <input
-                            name="password"
-                            type="password"
-                            value={formData.password}
-                            onChange={handleChange}
-                            className="w-full bg-black/50 border border-white/10 rounded-md px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50"
-                            placeholder="••••••••"
-                        />
-                    </div>
-
-                    <Button
-                        onClick={handleLogin}
-                        disabled={loading}
-                        className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-bold disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        {loading ? (
-                            <>
-                                <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Signing In...
-                            </>
-                        ) : "Sign In"}
-                    </Button>
-
-                    {needsVerification && (
-                        <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-sm rounded-md">
-                            <p className="font-semibold mb-2">Email Not Verified</p>
-                            <p className="text-xs mb-3">You need to verify your email before accessing the dashboard.</p>
-                            <Button
-                                onClick={handleResendVerification}
-                                disabled={resendingEmail}
-                                variant="outline"
-                                className="w-full border-yellow-500/50 text-yellow-500 hover:bg-yellow-500/10 text-xs"
-                            >
-                                {resendingEmail ? "Sending..." : "Resend Verification Email"}
-                            </Button>
+                    {successMsg && (
+                        <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-sm rounded-md font-medium">
+                            {successMsg}
                         </div>
                     )}
 
-                    <div className="relative">
-                        <div className="absolute inset-0 flex items-center">
-                            <span className="w-full border-t border-white/10" />
-                        </div>
-                        <div className="relative flex justify-center text-xs uppercase">
-                            <span className="bg-black px-2 text-gray-500">Or continue with</span>
-                        </div>
-                    </div>
+                    {step === "PHONE" ? (
+                        <form onSubmit={handleSendOtp} className="space-y-4">
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Mobile Number</label>
+                                <div className="relative">
+                                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                                    <input
+                                        type="tel"
+                                        value={phone}
+                                        onChange={(e) => setPhone(e.target.value)}
+                                        className="w-full bg-black/50 border border-white/10 rounded-md pl-10 pr-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50"
+                                        placeholder="0712 345 678"
+                                        autoFocus
+                                    />
+                                </div>
+                                <p className="text-[10px] text-gray-500">We'll text you a verification code.</p>
+                            </div>
 
-                    <Button variant="outline" type="button" disabled className="w-full border-white/10 text-white hover:bg-white/10 disabled:opacity-50">
-                        Google (Coming Soon)
-                    </Button>
+                            {/* Simple Custom Captcha Checkbox */}
+                            <div className="flex items-center gap-3 p-3 rounded-md bg-black/20 border border-white/5">
+                                <input
+                                    type="checkbox"
+                                    id="captcha"
+                                    checked={captchaVerified}
+                                    onChange={(e) => setCaptchaVerified(e.target.checked)}
+                                    className="w-5 h-5 rounded border-gray-600 text-yellow-500 focus:ring-yellow-500 bg-black cursor-pointer"
+                                />
+                                <label htmlFor="captcha" className="text-sm text-gray-300 cursor-pointer select-none">I'm human (Required)</label>
+                            </div>
 
-                    <p className="text-center text-sm text-gray-400">
-                        Don't have an account?{" "}
-                        <Link href="/signup" className="font-semibold text-yellow-500 hover:text-yellow-400">
-                            Sign up
-                        </Link>
-                    </p>
+                            <Button
+                                type="submit"
+                                disabled={loading}
+                                className="w-full h-12 bg-yellow-500 hover:bg-yellow-400 text-black font-black text-lg rounded-md transition-all hover:scale-[1.01]"
+                            >
+                                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "SEND CODE"}
+                            </Button>
+                        </form>
+                    ) : (
+                        <form onSubmit={handleVerifyOtp} className="space-y-4">
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Verification Code</label>
+                                <div className="relative">
+                                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                                    <input
+                                        type="text"
+                                        value={otp}
+                                        onChange={(e) => setOtp(e.target.value)}
+                                        className="w-full bg-black/50 border border-white/10 rounded-md pl-10 pr-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 tracking-widest font-mono text-center text-xl"
+                                        placeholder="000000"
+                                        maxLength={6}
+                                        autoFocus
+                                    />
+                                </div>
+                            </div>
+
+                            <Button
+                                type="submit"
+                                disabled={loading}
+                                className="w-full h-12 bg-yellow-500 hover:bg-yellow-400 text-black font-black text-lg rounded-md transition-all hover:scale-[1.01]"
+                            >
+                                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "VERIFY & LOGIN"}
+                            </Button>
+
+                            <button
+                                type="button"
+                                onClick={() => setStep("PHONE")}
+                                className="w-full text-xs text-center text-gray-500 hover:text-white mt-4 underline"
+                            >
+                                Wrong number? Go back
+                            </button>
+                        </form>
+                    )}
+                </div>
+
+                <div className="pt-4 flex items-center justify-center gap-2 text-gray-600">
+                    <ShieldCheck className="w-3 h-3" />
+                    <span className="text-[10px] uppercase tracking-wider font-bold">Trusted • Private • Simple</span>
                 </div>
             </div>
         </div>

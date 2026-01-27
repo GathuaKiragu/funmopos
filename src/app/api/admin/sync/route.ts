@@ -1,19 +1,30 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { syncAllFixtures } from "@/lib/api-football";
 
-export async function GET(request: Request) {
-    const { searchParams } = new URL(request.url);
-    const key = searchParams.get("key");
+async function verifyAdmin() {
+    const cookieStore = await cookies();
+    const session = cookieStore.get('admin_session');
+    return !!session;
+}
 
-    // Simple security check
-    if (key !== process.env.ADMIN_SYNC_KEY && process.env.NODE_ENV === "production") {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
+export async function POST(request: Request) {
     try {
-        console.log("[API] Manual Sync Triggered");
-        await syncAllFixtures(7); // Sync next 7 days
-        return NextResponse.json({ message: "Sync successful", analyzedDays: 7 });
+        const isAdmin = await verifyAdmin();
+        if (!isAdmin) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+
+        const { days = 2 } = await request.json(); // Default to today and tomorrow
+
+        console.log(`[API] Manual Sync Triggered for ${days} days`);
+        await syncAllFixtures(days);
+
+        return NextResponse.json({
+            message: "Sync successful",
+            analyzedDays: days,
+            timestamp: new Date().toISOString()
+        });
     } catch (error: any) {
         console.error("Sync Error:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });

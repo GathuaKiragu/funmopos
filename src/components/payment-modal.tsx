@@ -9,6 +9,7 @@ import { doc, updateDoc, setDoc, collection, serverTimestamp } from "firebase/fi
 import { db } from "@/lib/firebase";
 import { Check, X, RefreshCw } from "lucide-react";
 import { useLocation } from "@/hooks/useLocation";
+import { useAccess } from "@/hooks/useAccess";
 
 interface PaymentModalProps {
     children?: React.ReactNode;
@@ -45,8 +46,12 @@ const TIER_NAMES = {
     vip: "VIP Access"
 };
 
+// Fixed exchange rate for processing international payments in KES
+const USD_TO_KES = 135;
+
 export function PaymentModal({ children }: PaymentModalProps) {
     const { user } = useAuth();
+    const { tier, receiptEmail } = useAccess();
     const { currency, loading: locLoading, toggleCurrency } = useLocation();
     const [selectedTier, setSelectedTier] = useState<string | null>("standard");
     const [isOpen, setIsOpen] = useState(false);
@@ -80,8 +85,8 @@ export function PaymentModal({ children }: PaymentModalProps) {
             const txRef = doc(collection(db, "transactions"));
             await setDoc(txRef, {
                 userId: user.uid,
-                amount: getPrice(selectedTier),
-                currency: currency,
+                amount: processingAmount,
+                currency: "KES",
                 tier: selectedTier,
                 reference: reference.reference,
                 status: "success",
@@ -109,15 +114,17 @@ export function PaymentModal({ children }: PaymentModalProps) {
     const currentPrice = selectedTier ? getPrice(selectedTier) : 0;
     const currentSymbol = PRICING[currency].symbol;
 
-    // Paystack Amount Logic:
-    // If USD, Paystack uses cents? Actually Paystack international usually charges in local currency or USD if enabled.
-    // For simplicity, we pass strict amounts. Warning: USD support on Paystack needs specific activation.
-    // We assume the account supports it.
+    // Paystack Processing Logic:
+    // To avoid "Currency not supported" errors on standard Kenyan accounts,
+    // we process all transactions in KES, but show USD prices to the user.
+    const processingAmount = currency === 'USD'
+        ? Math.round(currentPrice * USD_TO_KES)
+        : currentPrice;
 
     const componentProps = {
-        email: user?.email || "user@example.com",
-        amount: currentPrice * 100, // Always cents/kobo
-        currency: currency,
+        email: receiptEmail || user?.email || "noreply@funmo.africa",
+        amount: processingAmount * 100, // Always cents/kobo
+        currency: "KES", // Always process in KES to ensure account compatibility
         publicKey,
         text: `Pay ${currentSymbol}${currentPrice}`,
         onSuccess: handleSuccess,
@@ -140,6 +147,7 @@ export function PaymentModal({ children }: PaymentModalProps) {
                 </DialogHeader>
 
                 {success ? (
+                    /* ... (unchanged success view) ... */
                     <div className="flex flex-col items-center justify-center p-12 text-center text-emerald-500 animate-in fade-in zoom-in duration-300">
                         <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center mb-4">
                             <Check className="w-8 h-8" />
@@ -149,10 +157,15 @@ export function PaymentModal({ children }: PaymentModalProps) {
                     </div>
                 ) : (
                     <div className="flex flex-col">
-                        <div className="flex justify-end mb-4">
+                        <div className="flex justify-between items-center mb-4">
+                            {currency === 'USD' && (
+                                <p className="text-[10px] text-yellow-500/80 font-medium">
+                                    💡 International payment processed in KES equivalent.
+                                </p>
+                            )}
                             <button
                                 onClick={toggleCurrency}
-                                className="flex items-center gap-1.5 text-[10px] uppercase font-bold text-gray-400 hover:text-white transition-colors bg-white/5 px-2 py-1 rounded"
+                                className="flex items-center gap-1.5 text-[10px] uppercase font-bold text-gray-400 hover:text-white transition-colors bg-white/5 px-2 py-1 rounded ml-auto"
                             >
                                 <RefreshCw className="w-3 h-3" />
                                 Switch to {currency === 'KES' ? 'USD' : 'KES'}
@@ -195,11 +208,16 @@ export function PaymentModal({ children }: PaymentModalProps) {
                             })}
                         </div>
 
-                        <div className="flex justify-center mt-6">
+                        <div className="flex flex-col items-center mt-6">
                             <PaystackButton
                                 {...componentProps}
                                 className="w-full max-w-sm bg-yellow-500 hover:bg-yellow-400 text-black font-bold py-3 rounded-md transition-colors disabled:opacity-50"
                             />
+                            {currency === 'USD' && (
+                                <p className="text-[9px] text-gray-500 mt-2">
+                                    Total for checkout: <span className="text-gray-400 font-bold">KES {processingAmount}</span>
+                                </p>
+                            )}
                         </div>
                     </div>
                 )}

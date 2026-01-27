@@ -11,9 +11,11 @@
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",
     "axios": "^1.13.2",
+    "cheerio": "^1.2.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "firebase": "^12.8.0",
+    "firebase-admin": "^13.6.0",
     "framer-motion": "^12.28.1",
     "lucide-react": "^0.562.0",
     "next": "16.1.4",

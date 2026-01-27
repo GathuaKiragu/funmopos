@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, Lock, Users, Database, Activity, TrendingUp, RefreshCw, LogOut, AlertCircle, CheckCircle, Eye, MessageSquare, Clock } from "lucide-react";
+import { Loader2, Lock, Users, Database, Activity, TrendingUp, RefreshCw, LogOut, AlertCircle, CheckCircle, Eye, MessageSquare, Clock, History } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 interface Stats {
@@ -36,6 +36,9 @@ export default function AdminPage() {
     const [stats, setStats] = useState<Stats | null>(null);
     const [analytics, setAnalytics] = useState<Analytics | null>(null);
     const [refreshing, setRefreshing] = useState(false);
+    const [syncing, setSyncing] = useState(false);
+    const [syncDays, setSyncDays] = useState(2);
+    const [syncMessage, setSyncMessage] = useState("");
 
     const handleLogin = async () => {
         setError("");
@@ -84,6 +87,54 @@ export default function AdminPage() {
             console.error("Failed to load stats:", err);
         } finally {
             setRefreshing(false);
+        }
+    };
+
+    const handleSync = async () => {
+        setSyncing(true);
+        setSyncMessage("");
+        try {
+            const res = await fetch("/api/admin/sync", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ days: syncDays, startOffset: 0 }),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setSyncMessage("✅ Sync Successful!");
+                loadStats();
+                setTimeout(() => setSyncMessage(""), 5000);
+            } else {
+                setSyncMessage(`❌ Error: ${data.error}`);
+            }
+        } catch (err) {
+            setSyncMessage("❌ Sync Failed");
+        } finally {
+            setSyncing(false);
+        }
+    };
+
+    const handleBackfill = async () => {
+        setSyncing(true);
+        setSyncMessage("");
+        try {
+            const res = await fetch("/api/admin/sync", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ days: 3, startOffset: -2 }), // Sync last 2 days + today
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setSyncMessage("✅ Backfill Successful!");
+                loadStats();
+                setTimeout(() => setSyncMessage(""), 5000);
+            } else {
+                setSyncMessage(`❌ Error: ${data.error}`);
+            }
+        } catch (err) {
+            setSyncMessage("❌ Backfill Failed");
+        } finally {
+            setSyncing(false);
         }
     };
 
@@ -174,6 +225,41 @@ export default function AdminPage() {
                         <p className="text-sm text-gray-400 mt-1">System monitoring and analytics</p>
                     </div>
                     <div className="flex items-center gap-3">
+                        {syncMessage && (
+                            <span className="text-xs font-bold animate-in fade-in slide-in-from-right-2 mr-2">
+                                {syncMessage}
+                            </span>
+                        )}
+                        <div className="flex items-center bg-white/5 border border-white/10 rounded-lg px-2 mr-2">
+                            <span className="text-[10px] font-bold text-gray-500 uppercase px-2">Days:</span>
+                            <select
+                                value={syncDays}
+                                onChange={(e) => setSyncDays(Number(e.target.value))}
+                                className="bg-transparent text-xs font-bold text-white focus:outline-none py-1.5"
+                            >
+                                <option value={1} className="bg-black">1</option>
+                                <option value={2} className="bg-black">2</option>
+                                <option value={7} className="bg-black">7</option>
+                            </select>
+                        </div>
+                        <Button
+                            onClick={handleSync}
+                            disabled={syncing}
+                            variant="outline"
+                            className="border-yellow-500/50 text-yellow-500 hover:bg-yellow-500/10"
+                        >
+                            <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
+                            {syncing ? 'Syncing...' : 'Sync Fixtures'}
+                        </Button>
+                        <Button
+                            onClick={handleBackfill}
+                            disabled={syncing}
+                            variant="outline"
+                            className="border-emerald-500/50 text-emerald-500 hover:bg-emerald-500/10"
+                        >
+                            <History className="w-4 h-4 mr-2" />
+                            Backfill Results
+                        </Button>
                         <Button
                             onClick={loadStats}
                             disabled={refreshing}
@@ -318,8 +404,8 @@ export default function AdminPage() {
                             {analytics.recentActivity.map((activity, idx) => (
                                 <div key={idx} className="flex items-start gap-3 p-3 bg-black/30 rounded-lg hover:bg-black/40 transition-colors">
                                     <div className={`p-2 rounded-lg ${activity.type === 'view'
-                                            ? 'bg-cyan-500/20'
-                                            : 'bg-orange-500/20'
+                                        ? 'bg-cyan-500/20'
+                                        : 'bg-orange-500/20'
                                         }`}>
                                         {activity.type === 'view' ? (
                                             <Eye className="w-4 h-4 text-cyan-400" />

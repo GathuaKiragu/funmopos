@@ -3,97 +3,106 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { ArrowLeft, Loader2, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Loader2, ShieldCheck, Phone, User, KeyRound, CheckCircle2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from "firebase/auth";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
+import { signInWithCustomToken } from "firebase/auth";
+import { auth } from "@/lib/firebase"; // Make sure this exports your client auth
+import axios from "axios";
 
 export default function SignupPage() {
     const router = useRouter();
-    const [formData, setFormData] = useState({
-        name: "",
-        email: "",
-        phone: "",
-        password: "",
-        ageGate: false,
-    });
+
+    // Form State
+    const [step, setStep] = useState<1 | 2>(1); // 1 = Details, 2 = Verify OTP
+    const [name, setName] = useState("");
+    const [phone, setPhone] = useState(""); // User input
+    const [otp, setOtp] = useState("");
+    const [ageGate, setAgeGate] = useState(false);
+    const [captchaVerified, setCaptchaVerified] = useState(false); // Simple checkbox for now
+
+    // UI State
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
-    const [verificationSent, setVerificationSent] = useState(false);
+    const [successMsg, setSuccessMsg] = useState("");
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const { name, value, type, checked } = e.target;
-        setFormData((prev) => ({
-            ...prev,
-            [name]: type === "checkbox" ? checked : value,
-        }));
-    };
-
-    const handleSignup = async () => {
+    // Step 1: Send OTP
+    const handleSendOtp = async (e: React.FormEvent) => {
+        e.preventDefault();
         setError("");
+        setSuccessMsg("");
 
-        // 1. Basic Validation
-        if (!formData.name || !formData.email || !formData.phone || !formData.password) {
-            setError("Please fill in all fields.");
+        if (!name || !phone) {
+            setError("Please enter your name and phone number.");
             return;
         }
-        if (!formData.ageGate) {
-            setError("You must confirm you are over 18 to proceed.");
+
+        if (!ageGate) {
+            setError("You must confirm you are over 18.");
             return;
         }
-        if (formData.password.length < 6) {
-            setError("Password must be at least 6 characters.");
+
+        if (!captchaVerified) {
+            setError("Please confirm you are human.");
             return;
         }
-        // Validate phone number (basic Kenya format)
-        const phoneRegex = /^(\+254|0)[17]\d{8}$/;
-        if (!phoneRegex.test(formData.phone.replace(/\s/g, ''))) {
-            setError("Please enter a valid Kenyan phone number (e.g., 0712345678 or +254712345678)");
+
+        // Basic phone validation (simple check)
+        const cleanPhone = phone.replace(/\s+/g, '');
+        if (cleanPhone.length < 9) {
+            setError("Please enter a valid phone number.");
             return;
+        }
+
+        // Format phone to standard if needed? 
+        // Assuming user enters local format (07...) we might want to convert to +254...
+        // But let's assume user enters valid international or we handle "07" -> "+2547"
+        let formattedPhone = cleanPhone;
+        if (formattedPhone.startsWith("07") || formattedPhone.startsWith("01")) {
+            formattedPhone = "+254" + formattedPhone.substring(1);
+        } else if (!formattedPhone.startsWith("+")) {
+            // Maybe default to +254 if just 7... but risky.
+            // Let user handle it or prompt "+254"
         }
 
         setLoading(true);
 
         try {
-            // 2. Create Auth User
-            const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
-            const user = userCredential.user;
+            await axios.post("/api/auth/send-otp", { phone: formattedPhone });
+            setPhone(formattedPhone); // Store formatted version
+            setSuccessMsg(`OTP sent to ${formattedPhone}`);
+            setStep(2);
+        } catch (err: any) {
+            console.error(err);
+            setError(err.response?.data?.error || "Failed to send OTP. Try again.");
+        } finally {
+            setLoading(false);
+        }
+    };
 
-            // 3. Create Firestore Profile
-            await setDoc(doc(db, "users", user.uid), {
-                uid: user.uid,
-                name: formData.name,
-                email: formData.email,
-                phone: formData.phone,
-                role: "user",
-                subscriptionStatus: "free",
-                subscriptionExpiry: null,
-                emailVerified: false,
-                createdAt: serverTimestamp(),
+    // Step 2: Verify OTP & Login
+    const handleVerifyOtp = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError("");
+        setLoading(true);
+
+        try {
+            const res = await axios.post("/api/auth/verify-otp", {
+                phone,
+                otp,
+                name
             });
 
-            // 4. Update Auth Profile (Display Name)
-            await updateProfile(user, {
-                displayName: formData.name
-            });
+            const { token } = res.data;
 
-            // 5. Send Email Verification
-            await sendEmailVerification(user);
-            setVerificationSent(true);
+            // Sign in with Firebase
+            await signInWithCustomToken(auth, token);
 
-            // Don't redirect immediately - show verification message
+            // Redirect
+            router.push("/dashboard");
 
         } catch (err: any) {
-            console.error("Signup Error:", err);
-            // Map common firebase errors to user-friendly messages
-            if (err.code === "auth/email-already-in-use") {
-                setError("This email is already registered.");
-            } else if (err.code === "auth/invalid-email") {
-                setError("Invalid email address.");
-            } else {
-                setError("Failed to create account. Please try again.");
-            }
+            console.error(err);
+            setError(err.response?.data?.error || "Invalid OTP. Please try again.");
         } finally {
             setLoading(false);
         }
@@ -113,122 +122,146 @@ export default function SignupPage() {
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
                             <span className="relative inline-flex rounded-full h-2 w-2 bg-yellow-500"></span>
                         </span>
-                        High Value Tips Pending
+                        Join Now
                     </div>
-                    <h1 className="text-3xl font-bold tracking-tight text-white">Unlock Today's<br /><span className="text-yellow-500">Winning Tips</span></h1>
+                    <h1 className="text-4xl font-black tracking-tight text-white uppercase italic">
+                        Unlock <span className="text-yellow-500">Expert Tips</span>
+                    </h1>
                     <p className="mt-2 text-sm text-gray-400">
-                        Create your free account to reveal the hidden high-confidence plays instantly.
+                        Join 1,000+ winning bettors. {step === 1 ? "Create your account." : "Verify your info."}
                     </p>
                 </div>
 
-                <div className="space-y-4 p-8 bg-white/5 border border-white/10 rounded-xl backdrop-blur-sm shadow-xl">
+                <div className="p-8 bg-white/5 border border-white/10 rounded-xl backdrop-blur-sm shadow-xl relative overflow-hidden">
+
                     {error && (
-                        <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-500 text-sm rounded-md">
+                        <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-500 text-sm rounded-md animate-in fade-in">
                             {error}
                         </div>
                     )}
 
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-300">Full Name</label>
-                        <input
-                            name="name"
-                            type="text"
-                            value={formData.name}
-                            onChange={handleChange}
-                            className="w-full bg-black/50 border border-white/10 rounded-md px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50"
-                            placeholder="John Doe"
-                        />
-                    </div>
-
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-300">Email</label>
-                        <input
-                            name="email"
-                            type="email"
-                            value={formData.email}
-                            onChange={handleChange}
-                            className="w-full bg-black/50 border border-white/10 rounded-md px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50"
-                            placeholder="name@example.com"
-                        />
-                    </div>
-
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-300 flex items-center justify-between">
-                            Phone Number
-                            <span className="text-[10px] text-green-500 font-bold uppercase tracking-wide bg-green-500/10 px-1.5 py-0.5 rounded">For Winning Alerts</span>
-                        </label>
-                        <input
-                            name="phone"
-                            type="tel"
-                            value={formData.phone}
-                            onChange={handleChange}
-                            className="w-full bg-black/50 border border-white/10 rounded-md px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50"
-                            placeholder="0712345678"
-                        />
-                    </div>
-
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-300">Password</label>
-                        <input
-                            name="password"
-                            type="password"
-                            value={formData.password}
-                            onChange={handleChange}
-                            className="w-full bg-black/50 border border-white/10 rounded-md px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50"
-                            placeholder="••••••••"
-                        />
-                    </div>
-
-                    <div className="flex items-start gap-2 pt-2">
-                        <input
-                            name="ageGate"
-                            type="checkbox"
-                            id="age_gate"
-                            checked={formData.ageGate}
-                            onChange={handleChange}
-                            className="mt-1 rounded bg-black/50 border-white/10 text-yellow-500 focus:ring-yellow-500/50"
-                        />
-                        <label htmlFor="age_gate" className="text-xs text-gray-400">
-                            I certify that I am over 18 years of age and I have read and agree to the <Link href="/terms" className="text-yellow-500 underline">Terms of Service</Link> and <Link href="/privacy" className="text-yellow-500 underline">Privacy Policy</Link>.
-                        </label>
-                    </div>
-
-                    <Button
-                        onClick={handleSignup}
-                        disabled={loading || verificationSent}
-                        className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-bold disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        {loading ? (
-                            <>
-                                <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Creating Account...
-                            </>
-                        ) : verificationSent ? (
-                            "Check Your Email"
-                        ) : "Create Account"}
-                    </Button>
-
-                    {verificationSent && (
-                        <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-sm rounded-md">
-                            <p className="font-semibold mb-1">✓ Account created successfully!</p>
-                            <p className="text-xs">We've sent a verification email to <strong>{formData.email}</strong>. Please check your inbox and verify your email before logging in.</p>
-                            <Link href="/login" className="inline-block mt-3 text-yellow-500 hover:text-yellow-400 font-semibold text-xs">
-                                Go to Login →
-                            </Link>
+                    {successMsg && (
+                        <div className="mb-4 p-3 bg-green-500/10 border border-green-500/20 text-green-500 text-sm rounded-md animate-in fade-in">
+                            {successMsg}
                         </div>
                     )}
 
+                    {step === 1 ? (
+                        <form onSubmit={handleSendOtp} className="space-y-4 animate-in fade-in duration-500">
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Full Name</label>
+                                <div className="relative">
+                                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                                    <input
+                                        type="text"
+                                        value={name}
+                                        onChange={(e) => setName(e.target.value)}
+                                        className="w-full bg-black/50 border border-white/10 rounded-md pl-10 pr-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 transition-all"
+                                        placeholder="John Doe"
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Phone Number</label>
+                                <div className="relative">
+                                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                                    <input
+                                        type="tel"
+                                        value={phone}
+                                        onChange={(e) => setPhone(e.target.value)}
+                                        className="w-full bg-black/50 border border-white/10 rounded-md pl-10 pr-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 transition-all font-mono"
+                                        placeholder="07XX XXX XXX / +254..."
+                                        required
+                                    />
+                                </div>
+                                <p className="text-[10px] text-gray-500">We'll send a verification code to this number.</p>
+                            </div>
+
+                            <div className="flex items-center gap-2 pt-2">
+                                <input
+                                    type="checkbox"
+                                    id="age_gate"
+                                    checked={ageGate}
+                                    onChange={(e) => setAgeGate(e.target.checked)}
+                                    className="rounded bg-black/50 border-white/10 text-yellow-500 focus:ring-yellow-500/50"
+                                />
+                                <label htmlFor="age_gate" className="text-[10px] text-gray-500 leading-tight cursor-pointer">
+                                    I am 18+ and agree to the <Link href="/terms" className="text-yellow-500 underline">Terms</Link>.
+                                </label>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    id="captcha"
+                                    checked={captchaVerified}
+                                    onChange={(e) => setCaptchaVerified(e.target.checked)}
+                                    className="rounded bg-black/50 border-white/10 text-yellow-500 focus:ring-yellow-500/50"
+                                />
+                                <label htmlFor="captcha" className="text-[10px] text-gray-500 leading-tight cursor-pointer">
+                                    I'm not a robot (Captcha)
+                                </label>
+                            </div>
+
+                            <Button
+                                type="submit"
+                                disabled={loading}
+                                className="w-full h-12 bg-yellow-500 hover:bg-yellow-400 text-black font-black text-lg rounded-md shadow-lg shadow-yellow-500/20 mt-4"
+                            >
+                                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "CONTINUE"}
+                            </Button>
+                        </form>
+                    ) : (
+                        <form onSubmit={handleVerifyOtp} className="space-y-4 animate-in fade-in duration-500">
+                            <div className="text-center mb-6">
+                                <div className="mx-auto w-12 h-12 rounded-full bg-yellow-500/10 flex items-center justify-center mb-2">
+                                    <KeyRound className="w-6 h-6 text-yellow-500" />
+                                </div>
+                                <h3 className="text-lg font-bold text-white">Enter OTP</h3>
+                                <p className="text-sm text-gray-400">Sent to {phone}</p>
+                                <button type="button" onClick={() => setStep(1)} className="text-xs text-yellow-500 hover:underline mt-1">Change Number</button>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-widest text-center block">One-Time Password</label>
+                                <input
+                                    type="text"
+                                    value={otp}
+                                    onChange={(e) => setOtp(e.target.value)}
+                                    className="w-full bg-black/50 border border-white/10 rounded-md px-4 py-4 text-white text-center text-2xl tracking-[1em] font-mono focus:outline-none focus:ring-2 focus:ring-yellow-500/50 transition-all uppercase"
+                                    placeholder="••••••"
+                                    maxLength={6}
+                                    required
+                                    autoFocus
+                                />
+                            </div>
+
+                            <Button
+                                type="submit"
+                                disabled={loading || otp.length < 5}
+                                className="w-full h-12 bg-yellow-500 hover:bg-yellow-400 text-black font-black text-lg rounded-md shadow-lg shadow-yellow-500/20 mt-4"
+                            >
+                                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "VERIFY & LOGIN"}
+                            </Button>
+                        </form>
+                    )}
+
+                    <div className="mt-8 pt-4 border-t border-white/5 flex items-center justify-center gap-2 text-gray-600">
+                        <ShieldCheck className="w-3 h-3" />
+                        <span className="text-[10px] uppercase tracking-wider font-bold">Instant Verification by Sasa Signal</span>
+                    </div>
+                </div>
+
+                {step === 1 && (
                     <p className="text-center text-sm text-gray-400">
                         Already have an account?{" "}
                         <Link href="/login" className="font-semibold text-yellow-500 hover:text-yellow-400">
                             Log in
                         </Link>
                     </p>
-
-                    <div className="pt-4 border-t border-white/5 flex items-center justify-center gap-2 text-gray-500">
-                        <ShieldCheck className="w-3 h-3" />
-                        <span className="text-[10px] uppercase tracking-wider font-bold">Bank-Level Security • No Spam Guarantee</span>
-                    </div>
-                </div>
+                )}
             </div>
         </div>
     );

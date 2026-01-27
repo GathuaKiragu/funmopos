@@ -12,6 +12,7 @@ interface AccessState {
     isValid: boolean;
     loading: boolean;
     expiry?: Date;
+    receiptEmail?: string;
     canAccess: (requiredTier: AccessLevel) => boolean;
 }
 
@@ -29,13 +30,15 @@ export function useAccess(): AccessState {
     const [isValid, setIsValid] = useState(false);
     const [loading, setLoading] = useState(true);
     const [expiry, setExpiry] = useState<Date>();
+    const [receiptEmail, setReceiptEmail] = useState<string>();
 
     useEffect(() => {
         if (!user) {
             setTier("guest");
             setIsValid(false);
             setLoading(false);
-            setExpiry(undefined); // Ensure expiry is cleared for guests
+            setExpiry(undefined);
+            setReceiptEmail(undefined);
             return;
         }
 
@@ -44,6 +47,7 @@ export function useAccess(): AccessState {
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 const userTier = (data.tier as AccessLevel) || "free";
+                const userReceiptEmail = data.receiptEmail || (data.email && data.email !== "phone-user" ? data.email : "gathua612@gmail.com");
 
                 let active = false;
                 let subscriptionExpiryDate: Date | undefined;
@@ -57,10 +61,12 @@ export function useAccess(): AccessState {
                 setTier(userTier);
                 setIsValid(active);
                 setExpiry(subscriptionExpiryDate);
+                setReceiptEmail(userReceiptEmail);
             } else {
                 setTier("free");
                 setIsValid(false);
                 setExpiry(undefined);
+                setReceiptEmail("noreply@funmo.africa");
             }
             setLoading(false);
         }, (error) => {
@@ -76,5 +82,5 @@ export function useAccess(): AccessState {
         return TIER_LEVELS[tier] >= TIER_LEVELS[requiredTier];
     };
 
-    return { tier, isValid, loading, expiry, canAccess };
+    return { tier, isValid, loading, expiry, receiptEmail, canAccess };
 }
