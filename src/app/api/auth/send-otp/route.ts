@@ -19,17 +19,20 @@ export async function POST(request: Request) {
 
         try {
             const secretKey = process.env.RECAPTCHA_SECRET_KEY!;
+            console.log("reCAPTCHA Verification Attempt...");
+            console.log("Secret Key Present:", !!secretKey);
             const verifyUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${secretKey}&response=${captchaToken}`;
             const verifyRes = await fetch(verifyUrl, { method: "POST" });
             const verifyData = await verifyRes.json();
 
             if (!verifyData.success) {
                 console.error("reCAPTCHA Verification Failed:", verifyData);
-                return NextResponse.json({ error: "Captcha verification failed" }, { status: 400 });
+                return NextResponse.json({ error: "Captcha verification failed", details: verifyData }, { status: 400 });
             }
-        } catch (error) {
+            console.log("reCAPTCHA Verified Successfully.");
+        } catch (error: any) {
             console.error("reCAPTCHA Error:", error);
-            return NextResponse.json({ error: "Failed to verify captcha" }, { status: 500 });
+            return NextResponse.json({ error: "Failed to verify captcha", message: error.message }, { status: 500 });
         }
 
         // Normalize Phone Number (Assume Kenya +254 for now if starting with 0)
@@ -78,6 +81,10 @@ export async function POST(request: Request) {
 
     } catch (error: any) {
         console.error("API: Error sending OTP:", error);
-        return NextResponse.json({ error: error.message || "Failed to send OTP" }, { status: 500 });
+        return NextResponse.json({
+            error: "Failed to send OTP",
+            message: error.message,
+            stack: error.stack
+        }, { status: 500 });
     }
 }

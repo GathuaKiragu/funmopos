@@ -1,29 +1,53 @@
 import "server-only";
 import * as admin from "firebase-admin";
+import * as fs from "fs";
+import * as path from "path";
+
+const LOG_FILE = "/tmp/firebase-admin-debug.log";
+
+function logDebug(message: string) {
+    const timestamp = new Date().toISOString();
+    const logMessage = `[${timestamp}] ${message}\n`;
+    try {
+        fs.appendFileSync(LOG_FILE, logMessage);
+    } catch (e) {
+        console.error("Failed to write to debug log:", e);
+    }
+}
 
 function initFirebaseAdmin() {
     if (!admin.apps.length) {
-        if (!process.env.FIREBASE_PRIVATE_KEY || !process.env.FIREBASE_CLIENT_EMAIL) {
-            console.error("FIREBASE_PRIVATE_KEY present:", !!process.env.FIREBASE_PRIVATE_KEY);
-            console.error("FIREBASE_CLIENT_EMAIL present:", !!process.env.FIREBASE_CLIENT_EMAIL);
-            console.error("FIREBASE_PRIVATE_KEY or FIREBASE_CLIENT_EMAIL missing.");
-            // We can't init, so we stop here.
+        logDebug("Attempting to initialize Firebase Admin...");
+        const privateKey = process.env.FIREBASE_PRIVATE_KEY;
+        const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+        const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+
+        logDebug(`FIREBASE_PRIVATE_KEY present: ${!!privateKey}`);
+        logDebug(`FIREBASE_CLIENT_EMAIL present: ${!!clientEmail}`);
+        logDebug(`NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${projectId}`);
+
+        if (!privateKey || !clientEmail) {
+            logDebug("CRITICAL: Missing credentials!");
             return false;
         }
 
         try {
-            console.log("Initializing Firebase Admin with Project ID:", process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID);
+            const formattedKey = privateKey.replace(/\\n/g, "\n").replace(/^"(.*)"$/, '$1');
+            logDebug(`Formatted Key length: ${formattedKey.length}`);
+            logDebug(`Key starts with: ${formattedKey.substring(0, 30)}...`);
+
             admin.initializeApp({
                 credential: admin.credential.cert({
-                    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-                    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-                    privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n").replace(/^"(.*)"$/, '$1'),
+                    projectId: projectId,
+                    clientEmail: clientEmail,
+                    privateKey: formattedKey,
                 }),
             });
-            console.log("Firebase Admin initialized successfully.");
+            logDebug("Firebase Admin initialized successfully.");
             return true;
         } catch (error: any) {
-            console.error("Firebase Admin Init Error:", error);
+            logDebug(`Firebase Admin Init Error: ${error.message}`);
+            logDebug(`Error Stack: ${error.stack}`);
             return false;
         }
     }
