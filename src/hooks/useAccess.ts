@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
-export type AccessLevel = "guest" | "free" | "basic" | "standard" | "vip";
+export type AccessLevel = "guest" | "free" | "basic" | "pro" | "vip";
 
 interface AccessState {
     tier: AccessLevel;
@@ -22,7 +22,7 @@ const TIER_LEVELS: Record<AccessLevel, number> = {
     guest: 0,
     free: 1,
     basic: 2,
-    standard: 3,
+    pro: 3,
     vip: 4,
 };
 

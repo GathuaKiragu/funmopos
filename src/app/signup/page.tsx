@@ -102,8 +102,13 @@ export default function SignupPage() {
             // Sign in with Firebase
             await signInWithCustomToken(auth, token);
 
-            // Redirect
-            router.push("/dashboard");
+            // Success message for new user gift
+            setSuccessMsg("🎉 Welcome! We've granted you 24h of FREE Pro Access. Redirecting to your dashboard...");
+
+            // Allow user to read the message before redirecting
+            setTimeout(() => {
+                router.push("/dashboard");
+            }, 3000);
 
         } catch (err: any) {
             console.error(err);

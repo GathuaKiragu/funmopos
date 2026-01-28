@@ -7,11 +7,12 @@ import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { getFixturesClient as getFixtures, Fixture, Sport } from "@/lib/api-football";
 import { format, addDays, isSameDay, subDays, isToday, isYesterday, isTomorrow, formatDistanceToNow } from "date-fns";
-import { Trophy, Activity, ChevronRight, ChevronLeft, Lock, AlertTriangle, CheckCircle, TrendingUp, Filter, Podcast, Calendar } from "lucide-react";
+import { Trophy, Activity, ChevronRight, ChevronLeft, Lock, AlertTriangle, CheckCircle, TrendingUp, Filter, Podcast, Calendar, User as UserIcon } from "lucide-react";
 import { PaymentModal } from "@/components/payment-modal";
 import { calculateStake } from "@/lib/bankroll";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import Link from "next/link";
 
 // --- Types ---
 type FixtureGroup = {
@@ -146,7 +147,7 @@ export default function DashboardPage() {
         // Visibility Logic
         let isLocked = true;
         if (tier === "vip" || isTrial) isLocked = false;
-        else if (tier === "standard" && confidence < 85) isLocked = false;
+        else if (tier === "pro" && confidence < 85) isLocked = false;
         else if (tier === "basic" && confidence < 75) isLocked = false;
 
         if (!hasPrediction) isLocked = false;
@@ -260,6 +261,17 @@ export default function DashboardPage() {
     return (
         <div className="min-h-screen bg-black text-white p-4 pb-20 md:p-8">
             <div className="max-w-4xl mx-auto space-y-8">
+                {/* Dashboard Navigation */}
+                <div className="flex items-center justify-between">
+                    <Link href="/" className="inline-flex items-center text-gray-500 hover:text-white transition-colors">
+                        <ChevronLeft className="w-4 h-4 mr-2" /> Back to Home
+                    </Link>
+                    <Link href="/profile" className="flex items-center gap-2 text-sm font-medium text-gray-400 hover:text-white transition-colors bg-white/5 px-4 py-2 rounded-xl border border-white/10">
+                        <UserIcon className="w-4 h-4 text-yellow-500" />
+                        <span>My Account</span>
+                    </Link>
+                </div>
+
                 {isTrial && (
                     <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-2xl px-6 py-4 flex items-center justify-between gap-4">
                         <div className="flex items-center gap-3">

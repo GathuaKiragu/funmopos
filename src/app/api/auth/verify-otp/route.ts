@@ -69,7 +69,7 @@ export async function POST(request: Request) {
                     phoneNumber: formattedPhone,
                     createdAt: admin.firestore.FieldValue.serverTimestamp(),
                     displayName: name || "User",
-                    tier: 'vip', // Day 1 as VIP
+                    tier: 'pro', // Give Pro access
                     subscriptionExpiry: admin.firestore.Timestamp.fromDate(trialExpiry),
                     bankroll: 0
                 });

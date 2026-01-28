@@ -20,7 +20,7 @@ const PRICING = {
         symbol: "KES",
         tiers: [
             { id: "basic", price: 50 },
-            { id: "standard", price: 100 },
+            { id: "pro", price: 100 },
             { id: "vip", price: 300 }
         ]
     },
@@ -28,7 +28,7 @@ const PRICING = {
         symbol: "$",
         tiers: [
             { id: "basic", price: 1 },
-            { id: "standard", price: 2 },
+            { id: "pro", price: 2 },
             { id: "vip", price: 5 }
         ]
     }
@@ -36,13 +36,13 @@ const PRICING = {
 
 const FEATURES = {
     basic: ["Standard Predictions", "Basic Confidence Tips", "Valid until 23:59 EAT"],
-    standard: ["High Confidence Tips", "Expert Analysis", "Valid until 23:59 EAT"],
+    pro: ["High Confidence Tips", "Expert Analysis", "Valid until 23:59 EAT"],
     vip: ["ALL PREDICTIONS", "VIP Lock Picks (Highest Accuracy)", "Full Data Access", "Valid until 23:59 EAT"]
 };
 
 const TIER_NAMES = {
     basic: "Starter Pak",
-    standard: "Daily Winner",
+    pro: "Pro Pack",
     vip: "Ultimate VIP"
 };
 
@@ -53,7 +53,7 @@ export function PaymentModal({ children }: PaymentModalProps) {
     const { user } = useAuth();
     const { tier, receiptEmail } = useAccess();
     const { currency, loading: locLoading, toggleCurrency } = useLocation();
-    const [selectedTier, setSelectedTier] = useState<string | null>("standard");
+    const [selectedTier, setSelectedTier] = useState<string | null>("pro");
     const [isOpen, setIsOpen] = useState(false);
     const [success, setSuccess] = useState(false);
 
@@ -173,9 +173,9 @@ export function PaymentModal({ children }: PaymentModalProps) {
                         </div>
 
                         <div className="grid md:grid-cols-3 gap-4">
-                            {['basic', 'standard', 'vip'].map((tierId) => {
+                            {['basic', 'pro', 'vip'].map((tierId) => {
                                 const price = getPrice(tierId);
-                                const isBestValue = tierId === 'standard';
+                                const isBestValue = tierId === 'pro';
 
                                 return (
                                     <div
