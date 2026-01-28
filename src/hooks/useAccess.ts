@@ -10,6 +10,8 @@ export type AccessLevel = "guest" | "free" | "basic" | "standard" | "vip";
 interface AccessState {
     tier: AccessLevel;
     isValid: boolean;
+    isTrial: boolean;
+    trialExpiry?: Date;
     loading: boolean;
     expiry?: Date;
     receiptEmail?: string;
@@ -28,6 +30,8 @@ export function useAccess(): AccessState {
     const { user } = useAuth();
     const [tier, setTier] = useState<AccessLevel>("guest");
     const [isValid, setIsValid] = useState(false);
+    const [isTrial, setIsTrial] = useState(false);
+    const [trialExpiry, setTrialExpiry] = useState<Date>();
     const [loading, setLoading] = useState(true);
     const [expiry, setExpiry] = useState<Date>();
     const [receiptEmail, setReceiptEmail] = useState<string>();
@@ -36,6 +40,8 @@ export function useAccess(): AccessState {
         if (!user) {
             setTier("guest");
             setIsValid(false);
+            setIsTrial(false);
+            setTrialExpiry(undefined);
             setLoading(false);
             setExpiry(undefined);
             setReceiptEmail(undefined);
@@ -62,9 +68,23 @@ export function useAccess(): AccessState {
                 setIsValid(active);
                 setExpiry(subscriptionExpiryDate);
                 setReceiptEmail(userReceiptEmail);
+
+                // Trial Logic: first 24 hours
+                if (data.createdAt) {
+                    const created = data.createdAt.toDate();
+                    const now = new Date();
+                    const tExpiry = new Date(created.getTime() + 24 * 60 * 60 * 1000);
+                    setTrialExpiry(tExpiry);
+                    setIsTrial(now < tExpiry);
+                } else {
+                    setIsTrial(false);
+                }
             } else {
                 setTier("free");
                 setIsValid(false);
+                setIsTrial(true);
+                // For new users without doc yet, assume 24h from now
+                setTrialExpiry(new Date(Date.now() + 24 * 60 * 60 * 1000));
                 setExpiry(undefined);
                 setReceiptEmail("noreply@funmo.africa");
             }
@@ -82,5 +102,5 @@ export function useAccess(): AccessState {
         return TIER_LEVELS[tier] >= TIER_LEVELS[requiredTier];
     };
 
-    return { tier, isValid, loading, expiry, receiptEmail, canAccess };
+    return { tier, isValid, isTrial, trialExpiry, loading, expiry, receiptEmail, canAccess };
 }

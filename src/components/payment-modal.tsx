@@ -19,31 +19,31 @@ const PRICING = {
     KES: {
         symbol: "KES",
         tiers: [
-            { id: "basic", price: 100 },
-            { id: "standard", price: 250 },
-            { id: "vip", price: 500 }
+            { id: "basic", price: 50 },
+            { id: "standard", price: 100 },
+            { id: "vip", price: 300 }
         ]
     },
     USD: {
         symbol: "$",
         tiers: [
-            { id: "basic", price: 3 },
-            { id: "standard", price: 8 },
-            { id: "vip", price: 15 }
+            { id: "basic", price: 1 },
+            { id: "standard", price: 2 },
+            { id: "vip", price: 5 }
         ]
     }
 };
 
 const FEATURES = {
-    basic: ["Limited predictions", "No correct scores", "Valid until 23:59 EAT"],
-    standard: ["All match predictions", "Correct Scores", "Valid until 23:59 EAT"],
-    vip: ["Early Access Tips", "Highest Confidence Only", "Direct Alerts", "Valid until 23:59 EAT"]
+    basic: ["Standard Predictions", "Basic Confidence Tips", "Valid until 23:59 EAT"],
+    standard: ["High Confidence Tips", "Expert Analysis", "Valid until 23:59 EAT"],
+    vip: ["ALL PREDICTIONS", "VIP Lock Picks (Highest Accuracy)", "Full Data Access", "Valid until 23:59 EAT"]
 };
 
 const TIER_NAMES = {
-    basic: "Basic Access",
-    standard: "Standard Access",
-    vip: "VIP Access"
+    basic: "Starter Pak",
+    standard: "Daily Winner",
+    vip: "Ultimate VIP"
 };
 
 // Fixed exchange rate for processing international payments in KES

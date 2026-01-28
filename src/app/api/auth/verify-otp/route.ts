@@ -42,7 +42,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid OTP code" }, { status: 400 });
         }
 
-        if (Date.now() > otpData.expiresAt) {
+        if (!otpData || Date.now() > otpData.expiresAt) {
             return NextResponse.json({ error: "OTP has expired" }, { status: 400 });
         }
 

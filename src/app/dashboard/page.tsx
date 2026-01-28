@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { getFixturesClient as getFixtures, Fixture, Sport } from "@/lib/api-football";
-import { format, addDays, isSameDay, subDays, isToday, isYesterday, isTomorrow } from "date-fns";
+import { format, addDays, isSameDay, subDays, isToday, isYesterday, isTomorrow, formatDistanceToNow } from "date-fns";
 import { Trophy, Activity, ChevronRight, ChevronLeft, Lock, AlertTriangle, CheckCircle, TrendingUp, Filter, Podcast, Calendar } from "lucide-react";
 import { PaymentModal } from "@/components/payment-modal";
 import { calculateStake } from "@/lib/bankroll";
@@ -51,7 +51,7 @@ const getResult = (prediction: any, fixture: Fixture): 'WON' | 'LOST' | 'VOID' |
 
 export default function DashboardPage() {
     const { user, loading: authLoading } = useAuth();
-    const { tier, isValid, loading: accessLoading, canAccess } = useAccess();
+    const { tier, isTrial, trialExpiry, loading: accessLoading, canAccess } = useAccess();
     const router = useRouter();
 
     // -- State --
@@ -131,85 +131,119 @@ export default function DashboardPage() {
         );
     };
 
-    // -- Component: Match Card --
-    const MatchRow = ({ fixture }: { fixture: Fixture }) => {
+    // --- Component: Match Card ---
+    const MatchRow = ({ fixture, index }: { fixture: Fixture, index: number }) => {
         const { prediction, homeTeam, awayTeam, date, status, goals } = fixture;
         const result = getResult(prediction, fixture);
-        const isLive = ['1H', 'HT', '2H', 'ET', 'P', 'LIVE'].includes(status.short);
+        const isLive = ['1H', 'HT', '2H', 'ET', 'P', 'LIVE'].includes(status.short) || status.short === 'LIVE';
         const isFinished = ['FT', 'AET', 'PEN'].includes(status.short);
         const hasPrediction = !!prediction;
         const confidence = prediction?.confidence || 0;
-        const requiresTier = prediction?.requiresTier || "free";
-        const isLocked = (!canAccess(requiresTier) && tier !== 'vip') && hasPrediction;
 
-        // Simple Style for Prediction Badge
-        let badgeColor = "text-gray-400 bg-white/5 border-white/10";
-        if (confidence > 75) badgeColor = "text-emerald-500 bg-emerald-500/10 border-emerald-500/20";
-        else if (confidence > 50) badgeColor = "text-yellow-500 bg-yellow-500/10 border-yellow-500/20";
-        else if (confidence > 0) badgeColor = "text-red-500 bg-red-500/10 border-red-500/20";
+        // Trial Logic: Show top 10 high confidence picks for trial users
+        const isTrialSpecial = isTrial && index < 10 && confidence > 75;
+
+        // Visibility Logic
+        let isLocked = true;
+        if (tier === "vip" || isTrial) isLocked = false;
+        else if (tier === "standard" && confidence < 85) isLocked = false;
+        else if (tier === "basic" && confidence < 75) isLocked = false;
+
+        if (!hasPrediction) isLocked = false;
+
+        const badgeColor = confidence > 85 ? 'text-yellow-400 border-yellow-400/30 bg-yellow-400/10' :
+            confidence > 75 ? 'text-emerald-400 border-emerald-400/30 bg-emerald-400/10' :
+                'text-white/40 border-white/10 bg-white/5';
 
         const formattedTime = format(new Date(date), "HH:mm");
 
         return (
-            <div className={`group relative bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 rounded-xl p-4 transition-all duration-200 ${isLocked ? 'blur-[1px] select-none opacity-75' : ''}`}>
-
-                {isLocked && (
-                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/60 backdrop-blur-[2px] rounded-xl cursor-default">
-                        <PaymentModal>
-                            <Button size="sm" className="bg-yellow-500 text-black hover:bg-yellow-400 font-bold text-xs h-8 px-4"><Lock className="w-3 h-3 mr-2" /> Unlock Tip</Button>
-                        </PaymentModal>
-                    </div>
-                )}
-
-                <div className="flex flex-col gap-3">
-                    <div className="flex items-center justify-between gap-4">
-                        {/* Time / Status */}
-                        <div className="w-16 flex flex-col items-center justify-center flex-shrink-0 border-r border-white/5 pr-4">
+            <div className="group relative bg-[#1a1a1a] hover:bg-[#222] border border-white/5 rounded-2xl p-5 mb-3 transition-all duration-300">
+                <div className="flex flex-col gap-4">
+                    <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em]">{fixture.league.name}</span>
+                        <div className="flex items-center gap-2">
                             {isLive ? (
-                                <span className="text-[10px] font-black text-red-500 animate-pulse uppercase">Live</span>
+                                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/20">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                                    <span className="text-[10px] font-black text-red-500 uppercase">Live</span>
+                                </div>
                             ) : isFinished ? (
-                                <span className="text-[10px] font-black text-gray-500 uppercase">FT</span>
+                                <span className="text-[10px] font-black text-white/20 uppercase tracking-widest">Full Time</span>
                             ) : (
-                                <span className="text-xs font-mono font-bold text-gray-400">{formattedTime}</span>
-                            )}
-                            {goals?.home !== null && goals?.home !== undefined && (
-                                <span className="text-xs font-mono font-bold text-white mt-1">{goals.home}-{goals.away}</span>
-                            )}
-                        </div>
-
-                        {/* Teams */}
-                        <div className="flex-1 flex flex-col justify-center gap-2">
-                            <div className="flex items-center gap-3">
-                                <img src={homeTeam.logo} alt="" className="w-5 h-5 object-contain" />
-                                <span className={`text-sm font-bold ${goals?.home !== undefined && goals?.away !== undefined && goals.home! > goals.away! ? 'text-white' : 'text-gray-400'}`}>{homeTeam.name}</span>
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <img src={awayTeam.logo} alt="" className="w-5 h-5 object-contain" />
-                                <span className={`text-sm font-bold ${goals?.away !== undefined && goals?.home !== undefined && goals.away! > goals.home! ? 'text-white' : 'text-gray-400'}`}>{awayTeam.name}</span>
-                            </div>
-                        </div>
-
-                        {/* Prediction / Result */}
-                        <div className="flex flex-col items-end justify-center gap-1 min-w-[100px]">
-                            {hasPrediction ? (
-                                <>
-                                    <div className={`px-2 py-1 rounded-md text-[10px] uppercase font-black tracking-widest border ${badgeColor}`}>
-                                        {prediction.picked}
-                                    </div>
-                                    <div className="flex items-center gap-2 mt-1">
-                                        <span className={`text-[10px] font-bold ${confidence > 70 ? 'text-emerald-500' : 'text-gray-500'}`}>{confidence}%</span>
-                                        {result && (
-                                            <span className={`text-[10px] font-black uppercase ${result === 'WON' ? 'text-emerald-500' : 'text-red-500'}`}>
-                                                {result === 'WON' ? 'WON' : 'LOST'}
-                                            </span>
-                                        )}
-                                    </div>
-                                </>
-                            ) : (
-                                <span className="text-[10px] text-gray-600 font-bold uppercase tracking-widest">Analyzing</span>
+                                <span className="text-[10px] font-bold text-white/40 font-mono tracking-tighter">{formattedTime} EAT</span>
                             )}
                         </div>
                     </div>
+
+                    <div className="flex items-center justify-between gap-4">
+                        <div className="flex-1 flex flex-col gap-3">
+                            <div className="flex items-center gap-3">
+                                <div className="w-6 h-6 rounded-full bg-white/5 p-1 flex items-center justify-center">
+                                    {homeTeam.logo ? <img src={homeTeam.logo} alt="" className="w-full h-full object-contain" /> : <div className="text-[10px] font-black text-white/20">{homeTeam.name.charAt(0)}</div>}
+                                </div>
+                                <span className={`text-sm font-bold tracking-tight ${goals?.home! > goals?.away! ? 'text-white' : 'text-white/60'}`}>{homeTeam.name}</span>
+                                {goals?.home !== null && <span className="ml-auto text-lg font-black text-white">{goals.home}</span>}
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <div className="w-6 h-6 rounded-full bg-white/5 p-1 flex items-center justify-center">
+                                    {awayTeam.logo ? <img src={awayTeam.logo} alt="" className="w-full h-full object-contain" /> : <div className="text-[10px] font-black text-white/20">{awayTeam.name.charAt(0)}</div>}
+                                </div>
+                                <span className={`text-sm font-bold tracking-tight ${goals?.away! > goals?.home! ? 'text-white' : 'text-white/60'}`}>{awayTeam.name}</span>
+                                {goals?.away !== null && <span className="ml-auto text-lg font-black text-white">{goals.away}</span>}
+                            </div>
+                        </div>
+
+                        <div className="w-32 flex flex-col items-center justify-center border-l border-white/5 pl-4 relative">
+                            {hasPrediction ? (
+                                <div className="relative w-full flex flex-col items-center">
+                                    {isLocked ? (
+                                        <div className="flex flex-col items-center gap-2">
+                                            <div className="text-[10px] font-black text-white/10 blur-[2px] select-none uppercase tracking-tighter italic">Secret Tip</div>
+                                            <PaymentModal>
+                                                <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-yellow-500 hover:bg-yellow-400 text-black text-[9px] font-black uppercase transition-transform active:scale-95 shadow-lg shadow-yellow-500/10">
+                                                    <Lock size={10} fill="black" />
+                                                    Unlock
+                                                </button>
+                                            </PaymentModal>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className={`w-full py-2 rounded-xl text-center text-[10px] font-black uppercase tracking-tight shadow-inner ${badgeColor}`}>
+                                                {prediction.picked}
+                                            </div>
+                                            <div className="mt-2 flex items-center gap-1.5">
+                                                <span className="text-[10px] font-black text-white/40 uppercase tracking-tighter italic">{confidence}% Sure</span>
+                                                {result && (
+                                                    <div className={`px-1.5 py-0.5 rounded text-[8px] font-black ${result === 'WON' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
+                                                        {result}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="flex flex-col items-center gap-1 opacity-20">
+                                    <Activity className="w-3 h-3 animate-spin mb-1" />
+                                    <span className="text-[8px] font-black uppercase tracking-[0.2em]">Crunching</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {!isLocked && hasPrediction && (
+                        <div className="pt-3 border-t border-white/5 space-y-1.5">
+                            {Array.isArray(prediction.reasoning) ? prediction.reasoning.slice(0, 2).map((r, i) => (
+                                <div key={i} className="flex gap-2 items-start group-hover:opacity-100 opacity-60 transition-opacity">
+                                    <div className="w-1 h-1 rounded-full bg-yellow-500 mt-1.5 shrink-0 shadow-[0_0_8px_rgba(234,179,8,0.5)]" />
+                                    <p className="text-[10px] text-white/80 leading-tight italic line-clamp-1">{r}</p>
+                                </div>
+                            )) : (
+                                <p className="text-[10px] text-white/80 leading-tight italic line-clamp-1 opacity-60">{prediction.reasoning}</p>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
         );
@@ -226,6 +260,27 @@ export default function DashboardPage() {
     return (
         <div className="min-h-screen bg-black text-white p-4 pb-20 md:p-8">
             <div className="max-w-4xl mx-auto space-y-8">
+                {isTrial && (
+                    <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-2xl px-6 py-4 flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-yellow-500/20 flex items-center justify-center">
+                                <Trophy size={16} className="text-yellow-500" />
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black uppercase text-yellow-500 tracking-widest">Trial Active - VIP Access Unlocked</p>
+                                <p className="text-[10px] text-yellow-500/60 lowercase italic line-clamp-1">
+                                    Enjoy full access to all predictions today.
+                                </p>
+                            </div>
+                        </div>
+                        {trialExpiry && (
+                            <div className="text-right shrink-0">
+                                <p className="text-[10px] text-yellow-500/40 uppercase font-black">Ends In</p>
+                                <p className="text-[10px] font-bold text-yellow-500">{formatDistanceToNow(trialExpiry)}</p>
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {/* 1. Stats Header (New Request: Show Performance %) */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-white/5 rounded-2xl border border-white/10">
@@ -283,8 +338,8 @@ export default function DashboardPage() {
                                 </div>
                                 {/* Matches Grid */}
                                 <div className="grid md:grid-cols-2 gap-4">
-                                    {group.fixtures.map(f => (
-                                        <MatchRow key={f.id} fixture={f} />
+                                    {group.fixtures.map((f, idx) => (
+                                        <MatchRow key={f.id} fixture={f} index={idx} />
                                     ))}
                                 </div>
                             </section>

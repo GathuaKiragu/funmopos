@@ -2,7 +2,6 @@ import { format, subDays, addDays, isPast, addHours } from "date-fns";
 import { db } from "@/lib/firebase";
 import { collection, query, where, getDocs, writeBatch, doc } from "firebase/firestore";
 import axios from "axios";
-import { scrapeFixtures } from './scraper';
 
 export type Sport = "football" | "basketball";
 
@@ -76,8 +75,9 @@ const fetchFromApi = async (targetDate: Date, sport: Sport = "football"): Promis
 
     const targetDateKey = format(targetDate, "yyyy-MM-dd");
 
-    // API expects dateFrom (inclusive) and dateTo (exclusive), so we add 1 day to dateTo
-    const dateFrom = format(subDays(targetDate, 1), "yyyy-MM-dd");
+    // API expects dateFrom (inclusive) and dateTo (exclusive/inclusive depending on API)
+    // STRICT WINDOW AS REQUESTED: Today (Target) to Tomorrow (Target + 1)
+    const dateFrom = format(targetDate, "yyyy-MM-dd");
     const dateTo = format(addDays(targetDate, 1), "yyyy-MM-dd");
 
     try {
@@ -203,27 +203,41 @@ const analyzeFixtures = async (fixtures: Fixture[]): Promise<Fixture[]> => {
     }));
 
     const prompt = `
-        You are a cynical, high-stakes football handicapper. Your goal is 80%+ ACCURACY, which means avoiding losses is more important than finding wins.
-        
-        I have provided REAL-TIME NEWS HEADLINES for these matches. USE THEM. If a star player is out, DOWNGRADE the team.
-        
-        Step 1: "Devil's Advocate". For every potential bet, ask "How does this lose?". If the risk is >20%, DO NOT mark it as high confidence.
-        Step 2: Analyze the match based on Form, Squad News (from headlines), and Value.
-        Step 3: Output the prediction.
-        
-        For each match, return:
-        - picked: The prediction.
-        - confidence: 0-100%. Max 75% for standard leagues unless news confirms a massive advantage. >85% only for mismatches.
-        - reasoning: an ARRAY of 3 points. ONE POINT MUST QUOTE/REFERENCE THE NEWS provided if relevant.
-        - type: "result", "goals", or "score".
-        - isRisky: true if confidence < 60%.
-        - requiresTier: "vip" for your highest confidence picks (>75%), "free" for risky/fun bets.
+        You are the world's most advanced football betting algorithm, calibrated for "sharp" money. 
+        Your goal is NOT just to pick winners, but to identify POSITIVE EXPECTED VALUE (+EV) based on genuine probability vs market perception.
 
-        Return ONLY a JSON array in this format:
-        [{"id": number, "picked": string, "confidence": number, "reasoning": string[], "type": "result"|"goals"|"score", "isRisky": boolean, "requiresTier": string}]
-    
-        Matches to analyze:
+        INPUT DATA:
         ${JSON.stringify(fixturesData)}
+
+        MODELS TO APPLY:
+        1. **Poisson Distribution**: Estimate Expected Goals (xG) for both teams based on recent attack/defense ratings.
+        2. **Elo/Power Ratings**: Compare raw squad strength.
+        3. **Contextual Impact**: Adjust for "Must Win" situations, severe injuries (using the provided news), and Hostile Atmosphere.
+        4. **Variance Analysis**: If a result relies on luck (e.g., a lucky 1-0 win streak), REGRESS it to the mean.
+
+        EXECUTION STEPS:
+        1. Parse the provided NEWS HEADLINES. If a key player (Top Scorer/Captain/Playmaker) is missing, penalize the team by 15-20% immediately.
+        2. Calculate the "True Probability" of each outcome (Home/Draw/Away).
+        3. Compare your probability against standard market odds trends.
+        4. Select the outcome with the highest confidence relative to risk.
+
+        OUTPUT REQUIREMENTS:
+        - **picked**: The specific market (e.g., "Arsenal Win", "Over 2.5 Goals", "BTTS Yes").
+        - **confidence**: A precise integer (0-100).
+            - 90-100%: "Lock" (Mismatch of the season).
+            - 80-89%: "Strong Value" (Clear statistical edge).
+            - 70-79%: "Good Bet" (Solid, standard play).
+            - <70%: "Risky/Lean" (Avoid if possible, or mark isRisky: true).
+        - **reasoning**: Array of 3 short, punchy, data-driven points.
+            - Point 1: Statistical edge (e.g., "xG suggests underperformance...").
+            - Point 2: Tactical/News factor (e.g., "Kane injury leaves hole in attack").
+            - Point 3: Comparison (e.g., "Home form > Away weakness").
+        - **type**: "result" | "goals" | "score".
+        - **isRisky**: true if confidence < 75%.
+        - **requiresTier**: "vip" for confidence > 80%, "free" otherwise.
+
+        Return strictly a JSON array:
+        [{"id": number, "picked": string, "confidence": number, "reasoning": string[], "type": "result"|"goals"|"score", "isRisky": boolean, "requiresTier": string}]
     `;
 
     try {

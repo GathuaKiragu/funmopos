@@ -1,94 +1,64 @@
-import axios from 'axios';
-import * as cheerio from 'cheerio';
-import { Fixture, Sport } from './api-football';
-import { format } from 'date-fns';
+
+import axios from "axios";
+import * as cheerio from "cheerio";
+import { format } from "date-fns";
+import { SourceIdentity, SourceReport } from "./reliability/types";
 
 /**
- * Scrapes fixture data from a high-reliability public source.
- * This is used when the primary API lacks coverage for specific dates/leagues.
+ * Scrapes fixture data from Besoccer as a SourceReport.
  */
-export async function scrapeFixtures(date: Date): Promise<Fixture[]> {
+export async function scrapeBesoccer(date: Date): Promise<SourceReport[]> {
     try {
         const formattedDate = format(date, "yyyy-MM-dd");
-        console.log(`[Scraper] Fetching data for ${formattedDate}...`);
-
-        // Target: Besoccer (Excellent semantic HTML for parsing)
         const url = `https://www.besoccer.com/livescore/${formattedDate}`;
 
         const { data } = await axios.get(url, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             },
-            timeout: 5000
+            timeout: 10000
         });
 
         const $ = cheerio.load(data);
-        const fixtures: Fixture[] = [];
+        const reports: SourceReport[] = [];
 
-        // Besoccer Structure: .panel-title (League) -> .panel-body (Matches)
-        $('.panel-title').each((i, leagueEl) => {
-            const leagueName = $(leagueEl).find('a').first().text().trim();
-            const leagueId = $(leagueEl).attr('id') || `league-${i}`;
-            const leagueFlag = $(leagueEl).find('img').attr('src') || "";
+        $('.match-link').each((i, el) => {
+            const $el = $(el);
+            const homeTeam = $el.find('.team-name').first().text().trim();
+            const awayTeam = $el.find('.team-name').last().text().trim();
+            const scoreText = $el.find('.marker').text().trim();
+            const statusText = $el.find('.status').text().trim() || "NS";
 
-            // The matches are in the NEXT sibling .panel-body
-            const matchContainer = $(leagueEl).next('.panel-body');
+            // Extract score if it exists
+            const scores = scoreText.includes('-') ? scoreText.split('-') : [];
+            const homeScore = scores.length === 2 ? parseInt(scores[0]) : undefined;
+            const awayScore = scores.length === 2 ? parseInt(scores[1]) : undefined;
 
-            matchContainer.find('.match-link').each((j, matchEl) => {
-                try {
-                    const statusText = $(matchEl).find('.status').text().trim();
-                    const homeName = $(matchEl).find('.team-name.home').text().trim();
-                    const awayName = $(matchEl).find('.team-name.away').text().trim();
-                    const homeScore = $(matchEl).find('.score .home').text().trim();
-                    const awayScore = $(matchEl).find('.score .away').text().trim();
-                    const matchId = $(matchEl).attr('href')?.split('/').pop() || `${leagueId}-${j}`;
-
-                    if (!homeName || !awayName) return;
-
-                    // Parse Status
-                    let shortStatus = "NS";
-                    if (statusText.includes("'") || statusText.toLowerCase() === 'live') shortStatus = "LIVE";
-                    if (statusText === 'FT' || statusText === 'Fin') shortStatus = "FT";
-                    if (statusText === 'P-P' || statusText === 'Post') shortStatus = "PST";
-                    if (statusText.includes(':')) shortStatus = "NS"; // Time
-
-                    // Normalize Goals
-                    const homeGoals = homeScore && !isNaN(parseInt(homeScore)) ? parseInt(homeScore) : null;
-                    const awayGoals = awayScore && !isNaN(parseInt(awayScore)) ? parseInt(awayScore) : null;
-
-                    fixtures.push({
-                        id: parseInt(matchId) || Math.floor(Math.random() * 1000000),
-                        sport: "football",
-                        date: new Date(formattedDate).toISOString(), // Approximate, time is in statusText usually
-                        league: {
-                            name: leagueName,
-                            logo: "",
-                            flag: leagueFlag
-                        },
-                        homeTeam: { name: homeName, logo: "" }, // Logos require extra fetch usually
-                        awayTeam: { name: awayName, logo: "" },
-                        status: {
-                            short: shortStatus,
-                            elapsed: statusText.includes("'") ? parseInt(statusText) : null
-                        },
-                        goals: {
-                            home: homeGoals,
-                            away: awayGoals
-                        },
-                        prediction: null
-                    });
-                } catch (e) {
-                    // Ignore malformed rows
-                }
-            });
+            if (homeTeam && awayTeam) {
+                reports.push({
+                    source: SourceIdentity.BESOCCER,
+                    timestamp: new Date(),
+                    homeTeam,
+                    awayTeam,
+                    kickoff: date,
+                    status: mapBesoccerStatus(statusText),
+                    scoreHome: homeScore,
+                    scoreAway: awayScore
+                });
+            }
         });
 
-        console.log(`[Scraper] Successfully parsed ${fixtures.length} matches.`);
-        return fixtures;
-
+        return reports;
     } catch (error) {
-        console.error("Scraper Error:", error);
+        console.error("Besoccer Scraper Error:", error);
         return [];
     }
+}
+
+function mapBesoccerStatus(status: string): string {
+    const s = status.toLowerCase();
+    if (s.includes('final') || s.includes('ft')) return 'FT';
+    if (s.includes('postp') || s.includes('pst')) return 'PST';
+    if (s.includes('live') || s.includes("'")) return 'LIVE';
+    return 'NS';
 }
