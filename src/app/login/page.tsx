@@ -138,7 +138,7 @@ export default function LoginPage() {
                             {/* Real Google reCAPTCHA */}
                             <div className="flex justify-center p-2 rounded-md bg-black/20 border border-white/5 overflow-hidden">
                                 <ReCAPTCHA
-                                    sitekey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"} // Test key
+                                    sitekey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY!}
                                     onChange={(token) => setCaptchaToken(token)}
                                     theme="dark"
                                 />
