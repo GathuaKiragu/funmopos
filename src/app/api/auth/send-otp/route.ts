@@ -6,10 +6,30 @@ import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
     try {
-        const { phone } = await request.json();
+        const { phone, captchaToken } = await request.json();
 
         if (!phone) {
             return NextResponse.json({ error: "Phone number is required" }, { status: 400 });
+        }
+
+        // 0. Verify reCAPTCHA
+        if (!captchaToken) {
+            return NextResponse.json({ error: "Captcha verification required" }, { status: 400 });
+        }
+
+        try {
+            const secretKey = process.env.RECAPTCHA_SECRET_KEY || "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe"; // Test secret
+            const verifyUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${secretKey}&response=${captchaToken}`;
+            const verifyRes = await fetch(verifyUrl, { method: "POST" });
+            const verifyData = await verifyRes.json();
+
+            if (!verifyData.success) {
+                console.error("reCAPTCHA Verification Failed:", verifyData);
+                return NextResponse.json({ error: "Captcha verification failed" }, { status: 400 });
+            }
+        } catch (error) {
+            console.error("reCAPTCHA Error:", error);
+            return NextResponse.json({ error: "Failed to verify captcha" }, { status: 500 });
         }
 
         // Normalize Phone Number (Assume Kenya +254 for now if starting with 0)

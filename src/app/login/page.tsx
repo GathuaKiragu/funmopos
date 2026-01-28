@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { signInWithCustomToken } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import axios from "axios";
+import ReCAPTCHA from "react-google-recaptcha";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -19,7 +20,7 @@ export default function LoginPage() {
     const [successMsg, setSuccessMsg] = useState("");
 
     // Captcha State
-    const [captchaVerified, setCaptchaVerified] = useState(false);
+    const [captchaToken, setCaptchaToken] = useState<string | null>(null);
 
     const handleSendOtp = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -30,7 +31,7 @@ export default function LoginPage() {
             return;
         }
 
-        if (!captchaVerified) {
+        if (!captchaToken) {
             setError("Please confirm you are not a robot.");
             return;
         }
@@ -39,7 +40,7 @@ export default function LoginPage() {
 
         try {
             // Call API to send OTP
-            await axios.post("/api/auth/send-otp", { phone });
+            await axios.post("/api/auth/send-otp", { phone, captchaToken });
             setStep("OTP");
             setSuccessMsg("Code sent! Check your SMS.");
         } catch (err: any) {
@@ -134,16 +135,13 @@ export default function LoginPage() {
                                 <p className="text-[10px] text-gray-500">We'll text you a verification code.</p>
                             </div>
 
-                            {/* Simple Custom Captcha Checkbox */}
-                            <div className="flex items-center gap-3 p-3 rounded-md bg-black/20 border border-white/5">
-                                <input
-                                    type="checkbox"
-                                    id="captcha"
-                                    checked={captchaVerified}
-                                    onChange={(e) => setCaptchaVerified(e.target.checked)}
-                                    className="w-5 h-5 rounded border-gray-600 text-yellow-500 focus:ring-yellow-500 bg-black cursor-pointer"
+                            {/* Real Google reCAPTCHA */}
+                            <div className="flex justify-center p-2 rounded-md bg-black/20 border border-white/5 overflow-hidden">
+                                <ReCAPTCHA
+                                    sitekey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"} // Test key
+                                    onChange={(token) => setCaptchaToken(token)}
+                                    theme="dark"
                                 />
-                                <label htmlFor="captcha" className="text-sm text-gray-300 cursor-pointer select-none">I'm human (Required)</label>
                             </div>
 
                             <Button
