@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { ArrowLeft, Loader2, ShieldCheck, Phone, User, KeyRound, CheckCircle2 } from "lucide-react";
@@ -20,6 +20,7 @@ export default function SignupPage() {
     const [otp, setOtp] = useState("");
     const [ageGate, setAgeGate] = useState(false);
     const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+    const recaptchaRef = useRef<ReCAPTCHA>(null);
 
     // UI State
     const [loading, setLoading] = useState(false);
@@ -75,6 +76,9 @@ export default function SignupPage() {
         } catch (err: any) {
             console.error(err);
             setError(err.response?.data?.error || "Failed to send OTP. Try again.");
+            // Reset reCAPTCHA on error
+            recaptchaRef.current?.reset();
+            setCaptchaToken(null);
         } finally {
             setLoading(false);
         }
@@ -196,6 +200,7 @@ export default function SignupPage() {
                             {/* Real Google reCAPTCHA */}
                             <div className="flex justify-center p-2 rounded-md bg-black/20 border border-white/5 overflow-hidden">
                                 <ReCAPTCHA
+                                    ref={recaptchaRef}
                                     sitekey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY!}
                                     onChange={(token) => setCaptchaToken(token)}
                                     theme="dark"

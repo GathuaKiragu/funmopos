@@ -32,7 +32,7 @@ export async function POST(request: Request) {
             const verifyData = await verifyRes.json();
 
             if (!verifyData.success) {
-                console.error("reCAPTCHA Verification Failed:", verifyData);
+                console.error("reCAPTCHA Verification Failed:", JSON.stringify(verifyData, null, 2));
                 return NextResponse.json({ error: "Captcha verification failed", details: verifyData }, { status: 400 });
             }
             console.log("reCAPTCHA Verified Successfully.");

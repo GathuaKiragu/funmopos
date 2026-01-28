@@ -9,6 +9,7 @@ import { signInWithCustomToken } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import axios from "axios";
 import ReCAPTCHA from "react-google-recaptcha";
+import { useRef } from "react";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -21,6 +22,7 @@ export default function LoginPage() {
 
     // Captcha State
     const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+    const recaptchaRef = useRef<ReCAPTCHA>(null);
 
     const handleSendOtp = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -46,6 +48,9 @@ export default function LoginPage() {
         } catch (err: any) {
             console.error("OTP Error Details:", err.response?.data || err);
             setError(err.response?.data?.error || "Failed to send code. Try again.");
+            // Reset reCAPTCHA on error
+            recaptchaRef.current?.reset();
+            setCaptchaToken(null);
         } finally {
             setLoading(false);
         }
@@ -138,6 +143,7 @@ export default function LoginPage() {
                             {/* Real Google reCAPTCHA */}
                             <div className="flex justify-center p-2 rounded-md bg-black/20 border border-white/5 overflow-hidden">
                                 <ReCAPTCHA
+                                    ref={recaptchaRef}
                                     sitekey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY!}
                                     onChange={(token) => setCaptchaToken(token)}
                                     theme="dark"
