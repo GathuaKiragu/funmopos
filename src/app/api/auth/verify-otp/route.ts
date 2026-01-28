@@ -87,7 +87,20 @@ export async function POST(request: Request) {
         return NextResponse.json({ token: customToken });
 
     } catch (error: any) {
-        console.error("Error confirming OTP:", error);
-        return NextResponse.json({ error: error.message || "Authentication failed" }, { status: 500 });
+        console.error("API: Error confirming OTP:", error);
+
+        // Check for specific initialization error
+        if (error.message?.includes("Firebase Admin failed to initialize")) {
+            return NextResponse.json({
+                error: "Server configuration error",
+                message: "Firebase credentials missing or invalid in production."
+            }, { status: 500 });
+        }
+
+        return NextResponse.json({
+            error: "Authentication failed",
+            message: error.message,
+            details: error.toString()
+        }, { status: 500 });
     }
 }
