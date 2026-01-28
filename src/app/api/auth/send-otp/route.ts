@@ -6,7 +6,10 @@ import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
     try {
-        const { phone, captchaToken } = await request.json();
+        const body = await request.json().catch(() => ({}));
+        const { phone, captchaToken } = body;
+
+        console.log(`API: OTP Request for phone: ${phone}, hasToken: ${!!captchaToken}`);
 
         if (!phone) {
             return NextResponse.json({ error: "Phone number is required" }, { status: 400 });
@@ -72,9 +75,19 @@ export async function POST(request: Request) {
             attempts: 0
         };
 
-        const db = getAdminDb();
-        await db.collection("otps").doc(formattedPhone).set(otpDoc);
-        console.log("API: OTP Stored in Firestore.");
+        try {
+            console.log("API: Attempting to store OTP in Firestore...");
+            const db = getAdminDb();
+            await db.collection("otps").doc(formattedPhone).set(otpDoc);
+            console.log("API: OTP Stored in Firestore successfully.");
+        } catch (dbError: any) {
+            console.error("API: Firestore Error:", dbError);
+            return NextResponse.json({
+                error: "Database Error",
+                message: dbError.message,
+                details: "Could not store OTP in Firestore. Check Firebase Admin credentials and permissions."
+            }, { status: 500 });
+        }
 
         // 3. Send SMS via Sasa Signal
         const message = `Your Funmo Tips code is: ${otp}. Do not share this code with anyone.`;

@@ -26,8 +26,15 @@ function initFirebaseAdmin() {
         logDebug(`FIREBASE_CLIENT_EMAIL present: ${!!clientEmail}`);
         logDebug(`NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${projectId}`);
 
-        if (!privateKey || !clientEmail) {
-            logDebug("CRITICAL: Missing credentials!");
+        if (!privateKey || !clientEmail || !projectId) {
+            const missing = [];
+            if (!privateKey) missing.push("FIREBASE_PRIVATE_KEY");
+            if (!clientEmail) missing.push("FIREBASE_CLIENT_EMAIL");
+            if (!projectId) missing.push("NEXT_PUBLIC_FIREBASE_PROJECT_ID");
+
+            const msg = `CRITICAL: Missing credentials: ${missing.join(", ")}`;
+            console.error(msg);
+            logDebug(msg);
             return false;
         }
 
