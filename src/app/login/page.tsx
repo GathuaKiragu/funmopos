@@ -42,7 +42,7 @@ export default function LoginPage() {
 
         try {
             // Call API to send OTP
-            await axios.post("/api/auth/send-otp", { phone, captchaToken });
+            await axios.post("/api/auth/send-otp", { phone, captchaToken, type: 'LOGIN' });
             setStep("OTP");
             setSuccessMsg("Code sent! Check your SMS.");
         } catch (err: any) {
@@ -71,8 +71,7 @@ export default function LoginPage() {
             // Call API to verify OTP
             const res = await axios.post("/api/auth/verify-otp", {
                 phone,
-                otp,
-                name: "Returning User" // We don't ask for name on login
+                otp
             });
 
             const { token } = res.data;

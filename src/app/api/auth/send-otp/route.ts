@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase-admin";
+import { getAdminDb, getAdminAuth } from "@/lib/firebase-admin";
 import { sendSasaSMS } from "@/lib/sasa-signal";
 import crypto from 'crypto';
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -7,7 +7,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 export async function POST(request: Request) {
     try {
         const body = await request.json().catch(() => ({}));
-        const { phone, captchaToken } = body;
+        const { phone, captchaToken, type } = body; // type is 'LOGIN' or 'SIGNUP'
 
         console.log(`API: OTP Request for phone: ${phone}, hasToken: ${!!captchaToken}`);
 
@@ -51,7 +51,25 @@ export async function POST(request: Request) {
             formattedPhone = "+254" + formattedPhone;
         }
 
-        console.log(`API: Sending OTP to ${formattedPhone} (Original: ${phone})`);
+        console.log(`API: Sending OTP to ${formattedPhone} (Original: ${phone}, Type: ${type})`);
+
+        // 0b. Check if user exists (to separate Login vs Signup)
+        const auth = getAdminAuth();
+        let userExists = false;
+        try {
+            await auth.getUserByPhoneNumber(formattedPhone);
+            userExists = true;
+        } catch (e) {
+            userExists = false;
+        }
+
+        if (type === 'LOGIN' && !userExists) {
+            return NextResponse.json({ error: "No account found with this number. Please sign up first." }, { status: 404 });
+        }
+
+        if (type === 'SIGNUP' && userExists) {
+            return NextResponse.json({ error: "An account already exists with this number. Please log in." }, { status: 400 });
+        }
 
         // 0. Rate Limit (IP & Phone)
         const ip = request.headers.get("x-forwarded-for") || "unknown_ip";

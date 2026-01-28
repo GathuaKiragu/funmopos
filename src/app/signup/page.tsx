@@ -69,7 +69,7 @@ export default function SignupPage() {
         setLoading(true);
 
         try {
-            await axios.post("/api/auth/send-otp", { phone: formattedPhone, captchaToken });
+            await axios.post("/api/auth/send-otp", { phone: formattedPhone, captchaToken, type: 'SIGNUP' });
             setPhone(formattedPhone); // Store formatted version
             setSuccessMsg(`OTP sent to ${formattedPhone}`);
             setStep(2);

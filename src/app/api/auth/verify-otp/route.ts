@@ -56,7 +56,7 @@ export async function POST(request: Request) {
                 // Create new user
                 userRecord = await auth.createUser({
                     phoneNumber: formattedPhone,
-                    displayName: name || "User",
+                    displayName: name || "Anonymous User",
                 });
                 console.log("Created new user:", userRecord.uid);
 
