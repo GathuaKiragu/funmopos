@@ -4,19 +4,23 @@ import * as admin from "firebase-admin";
 function initFirebaseAdmin() {
     if (!admin.apps.length) {
         if (!process.env.FIREBASE_PRIVATE_KEY || !process.env.FIREBASE_CLIENT_EMAIL) {
+            console.error("FIREBASE_PRIVATE_KEY present:", !!process.env.FIREBASE_PRIVATE_KEY);
+            console.error("FIREBASE_CLIENT_EMAIL present:", !!process.env.FIREBASE_CLIENT_EMAIL);
             console.error("FIREBASE_PRIVATE_KEY or FIREBASE_CLIENT_EMAIL missing.");
             // We can't init, so we stop here.
             return false;
         }
 
         try {
+            console.log("Initializing Firebase Admin with Project ID:", process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID);
             admin.initializeApp({
                 credential: admin.credential.cert({
                     projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
                     clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-                    privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+                    privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n").replace(/^"(.*)"$/, '$1'),
                 }),
             });
+            console.log("Firebase Admin initialized successfully.");
             return true;
         } catch (error: any) {
             console.error("Firebase Admin Init Error:", error);
