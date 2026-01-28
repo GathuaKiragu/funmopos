@@ -182,15 +182,15 @@ export default function DashboardPage() {
                                 <div className="w-6 h-6 rounded-full bg-white/5 p-1 flex items-center justify-center">
                                     {homeTeam.logo ? <img src={homeTeam.logo} alt="" className="w-full h-full object-contain" /> : <div className="text-[10px] font-black text-white/20">{homeTeam.name.charAt(0)}</div>}
                                 </div>
-                                <span className={`text-sm font-bold tracking-tight ${goals?.home! > goals?.away! ? 'text-white' : 'text-white/60'}`}>{homeTeam.name}</span>
-                                {goals?.home !== null && <span className="ml-auto text-lg font-black text-white">{goals.home}</span>}
+                                <span className={`text-sm font-bold tracking-tight ${goals && goals.home! > goals.away! ? 'text-white' : 'text-white/60'}`}>{homeTeam.name}</span>
+                                {goals && goals.home !== null && <span className="ml-auto text-lg font-black text-white">{goals.home}</span>}
                             </div>
                             <div className="flex items-center gap-3">
                                 <div className="w-6 h-6 rounded-full bg-white/5 p-1 flex items-center justify-center">
                                     {awayTeam.logo ? <img src={awayTeam.logo} alt="" className="w-full h-full object-contain" /> : <div className="text-[10px] font-black text-white/20">{awayTeam.name.charAt(0)}</div>}
                                 </div>
-                                <span className={`text-sm font-bold tracking-tight ${goals?.away! > goals?.home! ? 'text-white' : 'text-white/60'}`}>{awayTeam.name}</span>
-                                {goals?.away !== null && <span className="ml-auto text-lg font-black text-white">{goals.away}</span>}
+                                <span className={`text-sm font-bold tracking-tight ${goals && goals.away! > goals.home! ? 'text-white' : 'text-white/60'}`}>{awayTeam.name}</span>
+                                {goals && goals.away !== null && <span className="ml-auto text-lg font-black text-white">{goals.away}</span>}
                             </div>
                         </div>
 

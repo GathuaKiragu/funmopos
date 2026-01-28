@@ -70,11 +70,11 @@ export default function LivePage() {
                                             <div className="flex-1 flex flex-col justify-center gap-2 px-4">
                                                 <div className="flex justify-between items-center">
                                                     <span className="text-sm font-bold text-white">{f.homeTeam.name}</span>
-                                                    <span className="text-lg font-mono font-black text-yellow-500">{f.goals.home}</span>
+                                                    <span className="text-lg font-mono font-black text-yellow-500">{f.goals?.home ?? '-'}</span>
                                                 </div>
                                                 <div className="flex justify-between items-center">
                                                     <span className="text-sm font-bold text-white">{f.awayTeam.name}</span>
-                                                    <span className="text-lg font-mono font-black text-yellow-500">{f.goals.away}</span>
+                                                    <span className="text-lg font-mono font-black text-yellow-500">{f.goals?.away ?? '-'}</span>
                                                 </div>
                                             </div>
                                         </div>
