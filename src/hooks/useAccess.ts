@@ -52,16 +52,26 @@ export function useAccess(): AccessState {
         const unsub = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
+                const safeToDate = (ts: any): Date | undefined => {
+                    if (!ts) return undefined;
+                    if (typeof ts.toDate === "function") return ts.toDate();
+                    if (ts instanceof Date) return ts;
+                    if (ts.seconds) return new Date(ts.seconds * 1000);
+                    return new Date(ts);
+                };
+
                 const userTier = (data.tier as AccessLevel) || "free";
                 const userReceiptEmail = data.receiptEmail || (data.email && data.email !== "phone-user" ? data.email : "gathua612@gmail.com");
 
                 let active = false;
                 let subscriptionExpiryDate: Date | undefined;
                 if (data.subscriptionExpiry) {
-                    const expiryDate = data.subscriptionExpiry.toDate();
-                    subscriptionExpiryDate = expiryDate;
-                    const now = new Date();
-                    active = expiryDate > now;
+                    const expiryDate = safeToDate(data.subscriptionExpiry);
+                    if (expiryDate) {
+                        subscriptionExpiryDate = expiryDate;
+                        const now = new Date();
+                        active = expiryDate > now;
+                    }
                 }
 
                 setTier(userTier);
@@ -70,8 +80,8 @@ export function useAccess(): AccessState {
                 setReceiptEmail(userReceiptEmail);
 
                 // Trial Logic: first 24 hours
-                if (data.createdAt) {
-                    const created = data.createdAt.toDate();
+                const created = safeToDate(data.createdAt);
+                if (created) {
                     const now = new Date();
                     const tExpiry = new Date(created.getTime() + 24 * 60 * 60 * 1000);
                     setTrialExpiry(tExpiry);
