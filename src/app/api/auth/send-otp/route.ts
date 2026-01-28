@@ -18,9 +18,12 @@ export async function POST(request: Request) {
         }
 
         try {
-            const secretKey = process.env.RECAPTCHA_SECRET_KEY!;
+            const secretKey = process.env.RECAPTCHA_SECRET_KEY;
             console.log("reCAPTCHA Verification Attempt...");
-            console.log("Secret Key Present:", !!secretKey);
+            if (!secretKey) {
+                console.error("CRITICAL: RECAPTCHA_SECRET_KEY is missing in environment variables!");
+                return NextResponse.json({ error: "Server configuration error (reCAPTCHA)" }, { status: 500 });
+            }
             const verifyUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${secretKey}&response=${captchaToken}`;
             const verifyRes = await fetch(verifyUrl, { method: "POST" });
             const verifyData = await verifyRes.json();
@@ -75,16 +78,25 @@ export async function POST(request: Request) {
 
         // 3. Send SMS via Sasa Signal
         const message = `Your Funmo Tips code is: ${otp}. Do not share this code with anyone.`;
-        await sendSasaSMS(formattedPhone, message);
+        try {
+            await sendSasaSMS(formattedPhone, message);
+        } catch (smsError: any) {
+            console.error("API: SMS Sending Failed:", smsError);
+            return NextResponse.json({
+                error: "Failed to send SMS",
+                message: smsError.message
+            }, { status: 500 });
+        }
 
         return NextResponse.json({ success: true, message: "OTP sent successfully" });
 
     } catch (error: any) {
         console.error("API: Error sending OTP:", error);
         return NextResponse.json({
-            error: "Failed to send OTP",
+            error: "Internal Server Error",
             message: error.message,
-            stack: error.stack
+            details: error.toString(),
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
         }, { status: 500 });
     }
 }

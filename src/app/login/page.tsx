@@ -44,7 +44,7 @@ export default function LoginPage() {
             setStep("OTP");
             setSuccessMsg("Code sent! Check your SMS.");
         } catch (err: any) {
-            console.error("OTP Error:", err);
+            console.error("OTP Error Details:", err.response?.data || err);
             setError(err.response?.data?.error || "Failed to send code. Try again.");
         } finally {
             setLoading(false);
