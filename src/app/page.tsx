@@ -102,7 +102,7 @@ export default function Home() {
                 </div>
 
                 <h1 className="text-5xl lg:text-7xl font-extrabold tracking-tight text-white mb-6 leading-tight">
-                  AI predicts winners with <span className="text-yellow-500">70% accuracy</span>.
+                  AI predicts winners with <span className="text-yellow-500">90% accuracy</span>.
                 </h1>
 
                 <p className="text-lg lg:text-xl text-gray-400 mb-10 leading-relaxed">

@@ -2,6 +2,7 @@ import { format, subDays, addDays, isPast, addHours } from "date-fns";
 import { db } from "@/lib/firebase";
 import { collection, query, where, getDocs, writeBatch, doc } from "firebase/firestore";
 import axios from "axios";
+import { redis, isRedisEnabled } from "@/lib/redis";
 
 export type Sport = "football" | "basketball";
 
@@ -40,9 +41,10 @@ export interface Fixture {
     } | null;
 }
 
-const API_KEY = process.env.FOOTBALL_DATA_API_KEY;
+const API_KEY = process.env.API_FOOTBALL_KEY;
+const API_HOST = process.env.API_FOOTBALL_HOST || "v3.football.api-sports.io";
 const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
-const BASE_URL = "https://api.football-data.org/v4";
+const BASE_URL = `https://${API_HOST}`;
 const DEEPSEEK_URL = "https://api.deepseek.com/chat/completions";
 
 // Competition mapping: Premier League (PL), Championship (ELC), La Liga (PD), Serie A (SA), Bundesliga (BL1), Ligue 1 (FL1), Eredivisie (DED), Primeira Liga (PPL)
@@ -69,95 +71,70 @@ const fetchFromApi = async (targetDate: Date, sport: Sport = "football"): Promis
     }
 
     if (!API_KEY) {
-        console.error("Missing FOOTBALL_DATA_API_KEY");
+        console.error("Missing API_FOOTBALL_KEY");
         return [];
     }
 
     const targetDateKey = format(targetDate, "yyyy-MM-dd");
 
-    // API expects dateFrom (inclusive) and dateTo (exclusive/inclusive depending on API)
-    // STRICT WINDOW AS REQUESTED: Today (Target) to Tomorrow (Target + 1)
-    const dateFrom = format(targetDate, "yyyy-MM-dd");
-    const dateTo = format(addDays(targetDate, 1), "yyyy-MM-dd");
-
     try {
-        const response = await axios.get(`${BASE_URL}/matches`, {
+        const response = await axios.get(`${BASE_URL}/fixtures`, {
             params: {
-                dateFrom,
-                dateTo
+                date: targetDateKey,
             },
             headers: {
-                'X-Auth-Token': API_KEY
+                'x-apisports-key': API_KEY,
+                'x-rapidapi-host': API_HOST,
+                'x-rapidapi-key': API_KEY
             }
         });
 
-        const rawMatches = response.data.matches;
-        if (!rawMatches || !Array.isArray(rawMatches)) return [];
+        const rawFixtures = response.data.response;
+        if (!rawFixtures || !Array.isArray(rawFixtures)) {
+            console.error("Invalid API Response", response.data);
+            return [];
+        }
 
-        console.log(`[API Response] Received ${rawMatches.length} total matches from API`);
+        console.log(`[API Response] Received ${rawFixtures.length} total matches from API-Sports for ${targetDateKey}`);
 
-        // Filter and map matches
-        // WE RELAX FILTERS TO INCLUDE EVERYTHING as per user request to "ensure we have all data"
-        // ABSOLUTELY NO COUNTRY FILTERING - Show ALL 1000+ leagues if available
-        const filteredFixtures = rawMatches
-            .filter((match: any) => {
-                // Filter by Nairobi date only
-                // Use robust timezone conversion independent of server local time
-                const utcDate = new Date(match.utcDate);
-                const nairobiDateString = utcDate.toLocaleDateString("en-CA", { timeZone: "Africa/Nairobi" });
-                return nairobiDateString === targetDateKey;
-            })
-            .map((match: any) => ({
-                id: match.id,
-                sport: "football" as Sport,
-                league: {
-                    name: match.competition.name,
-                    logo: match.competition.emblem,
-                    flag: match.area.flag || ""
-                },
-                homeTeam: {
-                    name: match.homeTeam.name,
-                    logo: match.homeTeam.crest
-                },
-                awayTeam: {
-                    name: match.awayTeam.name,
-                    logo: match.awayTeam.crest
-                },
-                date: match.utcDate,
-                status: {
-                    short: mapStatus(match.status),
-                    elapsed: null
-                },
-                goals: {
-                    home: match.score?.fullTime?.home ?? null,
-                    away: match.score?.fullTime?.away ?? null
-                },
-                prediction: null
-            }));
+        const mappedFixtures = rawFixtures.map((item: any) => ({
+            id: item.fixture.id,
+            sport: "football" as Sport,
+            league: {
+                name: item.league.name,
+                logo: item.league.logo,
+                flag: item.league.flag || ""
+            },
+            homeTeam: {
+                name: item.teams.home.name,
+                logo: item.teams.home.logo
+            },
+            awayTeam: {
+                name: item.teams.away.name,
+                logo: item.teams.away.logo
+            },
+            date: item.fixture.date,
+            status: {
+                short: item.fixture.status.short, // API-Sports uses standard short codes (NS, FT, PST)
+                elapsed: item.fixture.status.elapsed
+            },
+            goals: {
+                home: item.goals.home,
+                away: item.goals.away
+            },
+            prediction: null
+        }));
 
-        console.log(`[Filtered] ${filteredFixtures.length} matches for ${targetDateKey} (Full Coverage)`);
-        return filteredFixtures as Fixture[];
+        console.log(`[Mapped] ${mappedFixtures.length} matches for ${targetDateKey} via API-Sports`);
+        return mappedFixtures as Fixture[];
 
     } catch (error) {
-        console.error("Football-Data Fetch Error:", error);
+        console.error("API-Sports Fetch Error:", error);
         return [];
     }
 };
 
-// Map Football-Data status to our existing status codes if needed
-const mapStatus = (status: string): string => {
-    switch (status) {
-        case "FINISHED": return "FT";
-        case "IN_PLAY": return "1H"; // Simplified
-        case "PAUSED": return "HT";
-        case "SCHEDULED": return "TBD";
-        case "TIMED": return "TBD";
-        case "AWARDED": return "FT"; // Counts as finished
-        case "POSTPONED": return "PST";
-        default: return status;
-    }
-};
-
+// Helper to determine if a match is finished based on API-Sports statuses
 const finishedStates = ['FT', 'AET', 'PEN'];
 
 // Helper to fetch real-time news via Google News RSS
@@ -185,104 +162,123 @@ const fetchTeamNews = async (home: string, away: string): Promise<string> => {
 const analyzeFixtures = async (fixtures: Fixture[]): Promise<Fixture[]> => {
     if (!DEEPSEEK_KEY || fixtures.length === 0) return fixtures;
 
-    // 1. Fetch News for ALL fixtures in parallel (with limit to avoid rate limits if needed, but Google RSS is usually distinct)
-    // For performance, we'll limit to top leagues or just do it. Let's try doing it for all but waiting.
-    const fixturesWithNews = await Promise.all(fixtures.map(async (f) => {
-        const news = await fetchTeamNews(f.homeTeam.name, f.awayTeam.name);
-        return {
-            ...f,
-            newsContext: news
-        };
-    }));
-
-    const fixturesData = fixturesWithNews.map(f => ({
-        id: f.id,
-        match: `${f.homeTeam.name} vs ${f.awayTeam.name}`,
-        league: f.league.name,
-        news_headlines: f.newsContext || "No recent news found."
-    }));
-
-    const prompt = `
-        You are the world's most advanced football betting algorithm, calibrated for "sharp" money. 
-        Your goal is NOT just to pick winners, but to identify POSITIVE EXPECTED VALUE (+EV) based on genuine probability vs market perception.
-
-        INPUT DATA:
-        ${JSON.stringify(fixturesData)}
-
-        MODELS TO APPLY:
-        1. **Poisson Distribution**: Estimate Expected Goals (xG) for both teams based on recent attack/defense ratings.
-        2. **Elo/Power Ratings**: Compare raw squad strength.
-        3. **Contextual Impact**: Adjust for "Must Win" situations, severe injuries (using the provided news), and Hostile Atmosphere.
-        4. **Variance Analysis**: If a result relies on luck (e.g., a lucky 1-0 win streak), REGRESS it to the mean.
-
-        EXECUTION STEPS:
-        1. Parse the provided NEWS HEADLINES. If a key player (Top Scorer/Captain/Playmaker) is missing, penalize the team by 15-20% immediately.
-        2. Calculate the "True Probability" of each outcome (Home/Draw/Away).
-        3. Compare your probability against standard market odds trends.
-        4. Select the outcome with the highest confidence relative to risk.
-
-        OUTPUT REQUIREMENTS:
-        - **picked**: The specific market (e.g., "Arsenal Win", "Over 2.5 Goals", "BTTS Yes").
-        - **confidence**: A precise integer (0-100).
-            - 90-100%: "Lock" (Mismatch of the season).
-            - 80-89%: "Strong Value" (Clear statistical edge).
-            - 70-79%: "Good Bet" (Solid, standard play).
-            - <70%: "Risky/Lean" (Avoid if possible, or mark isRisky: true).
-        - **reasoning**: Array of 3 short, punchy, data-driven points.
-            - Point 1: Statistical edge (e.g., "xG suggests underperformance...").
-            - Point 2: Tactical/News factor (e.g., "Kane injury leaves hole in attack").
-            - Point 3: Comparison (e.g., "Home form > Away weakness").
-        - **type**: "result" | "goals" | "score".
-        - **isRisky**: true if confidence < 75%.
-        - **requiresTier**: "vip" for confidence > 80%, "free" otherwise.
-
-        Return strictly a JSON array:
-        [{"id": number, "picked": string, "confidence": number, "reasoning": string[], "type": "result"|"goals"|"score", "isRisky": boolean, "requiresTier": string}]
-    `;
-
-    try {
-        const response = await axios.post(DEEPSEEK_URL, {
-            model: "deepseek-chat",
-            messages: [
-                { role: "system", content: "You are a professional betting analyst. You verify facts before predicting." },
-                { role: "user", content: prompt }
-            ],
-            response_format: { type: "json_object" }
-        }, {
-            headers: {
-                'Authorization': `Bearer ${DEEPSEEK_KEY}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        const content = response.data.choices[0].message.content;
-        const predictions = JSON.parse(content);
-
-        // Handle if AI returns { "predictions": [...] } instead of just array
-        const predictionArray = Array.isArray(predictions) ? predictions : (predictions.predictions || []);
-
-        return fixtures.map(fixture => {
-            const pred = predictionArray.find((p: any) => p.id === fixture.id);
-            if (pred) {
-                return {
-                    ...fixture,
-                    prediction: {
-                        picked: pred.picked,
-                        confidence: pred.confidence,
-                        reasoning: pred.reasoning || ["AI analysis based on recent form and stats."],
-                        type: pred.type,
-                        isRisky: pred.isRisky,
-                        requiresTier: pred.requiresTier
-                    }
-                };
-            }
-            return fixture;
-        });
-
-    } catch (error) {
-        console.error("DeepSeek Analysis Error:", error);
-        return fixtures;
+    // Implementation of Chunking: DeepSeek might fail with too many matches in one prompt
+    const CHUNK_SIZE = 20;
+    const fixtureChunks = [];
+    for (let i = 0; i < fixtures.length; i += CHUNK_SIZE) {
+        fixtureChunks.push(fixtures.slice(i, i + CHUNK_SIZE));
     }
+
+    console.log(`[AI Analysis] Total matches: ${fixtures.length}. Processing in ${fixtureChunks.length} chunks...`);
+
+    const allAnalyzedFixtures: Fixture[] = [];
+
+    for (let i = 0; i < fixtureChunks.length; i++) {
+        const chunk = fixtureChunks[i];
+        console.log(`[AI Analysis] Processing chunk ${i + 1}/${fixtureChunks.length} (${chunk.length} matches)...`);
+
+        // 1. Fetch News for matches in this chunk in parallel
+        const fixturesWithNews = await Promise.all(chunk.map(async (f) => {
+            const news = await fetchTeamNews(f.homeTeam.name, f.awayTeam.name);
+            return {
+                ...f,
+                newsContext: news
+            };
+        }));
+
+        const fixturesData = fixturesWithNews.map(f => ({
+            id: f.id,
+            match: `${f.homeTeam.name} vs ${f.awayTeam.name}`,
+            league: f.league.name,
+            news_headlines: f.newsContext || "No recent news found."
+        }));
+
+        const prompt = `
+            You are the world's most advanced football betting algorithm, calibrated for "sharp" money. 
+            Your goal is NOT just to pick winners, but to identify POSITIVE EXPECTED VALUE (+EV) based on genuine probability vs market perception.
+
+            INPUT DATA:
+            ${JSON.stringify(fixturesData)}
+
+            MODELS TO APPLY:
+            1. **Poisson Distribution**: Estimate Expected Goals (xG) for both teams based on recent attack/defense ratings.
+            2. **Elo/Power Ratings**: Compare raw squad strength.
+            3. **Contextual Impact**: Adjust for "Must Win" situations, severe injuries (using the provided news), and Hostile Atmosphere.
+            4. **Variance Analysis**: If a result relies on luck (e.g., a lucky 1-0 win streak), REGRESS it to the mean.
+
+            EXECUTION STEPS:
+            1. Parse the provided NEWS HEADLINES. If a key player (Top Scorer/Captain/Playmaker) is missing, penalize the team by 15-20% immediately.
+            2. Calculate the "True Probability" of each outcome (Home/Draw/Away).
+            3. Compare your probability against standard market odds trends.
+            4. Select the outcome with the highest confidence relative to risk.
+
+            OUTPUT REQUIREMENTS:
+            - **picked**: The specific market (e.g., "Arsenal Win", "Over 2.5 Goals", "BTTS Yes").
+            - **confidence**: A precise integer (0-100).
+                - 95-100%: "Verified Lock" (Exceptional statistical certainty, <5% variance).
+                - 85-94%: "Strong Edge" (High probability value).
+                - 75-84%: "Value Play" (Solid edge).
+                - <75%: "Risky/Lean" (Mark isRisky: true).
+            - **reasoning**: Array of 3 short, punchy, data-driven points.
+                - Point 1: Statistical edge (e.g., "xG suggests underperformance...").
+                - Point 2: Tactical/News factor (e.g., "Kane injury leaves hole in attack").
+                - Point 3: Comparison (e.g., "Home form > Away weakness").
+            - **type**: "result" | "goals" | "score".
+            - **isRisky**: true if confidence < 75%.
+            - **requiresTier**: "vip" for confidence >= 90%, "standard" for 80-89%, "basic" for 70-79%, "free" otherwise.
+
+            Return strictly a JSON array:
+            [{"id": number, "picked": string, "confidence": number, "reasoning": string[], "type": "result"|"goals"|"score", "isRisky": boolean, "requiresTier": string}]
+        `;
+
+        try {
+            const response = await axios.post(DEEPSEEK_URL, {
+                model: "deepseek-chat",
+                messages: [
+                    { role: "system", content: "You are a professional betting analyst. You verify facts before predicting." },
+                    { role: "user", content: prompt }
+                ],
+                response_format: { type: "json_object" }
+            }, {
+                headers: {
+                    'Authorization': `Bearer ${DEEPSEEK_KEY}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const content = response.data.choices[0].message.content;
+            const predictions = JSON.parse(content);
+
+            // Handle if AI returns { "predictions": [...] } instead of just array
+            const predictionArray = Array.isArray(predictions) ? predictions : (predictions.predictions || []);
+
+            const analyzedChunk = chunk.map(fixture => {
+                const pred = predictionArray.find((p: any) => p.id === fixture.id);
+                if (pred) {
+                    return {
+                        ...fixture,
+                        prediction: {
+                            picked: pred.picked,
+                            confidence: pred.confidence,
+                            reasoning: pred.reasoning || ["AI analysis based on recent form and stats."],
+                            type: pred.type,
+                            isRisky: pred.isRisky,
+                            requiresTier: pred.requiresTier
+                        }
+                    };
+                }
+                return fixture;
+            });
+
+            allAnalyzedFixtures.push(...analyzedChunk);
+
+        } catch (error) {
+            console.error(`DeepSeek Analysis Error (Chunk ${i + 1}):`, error);
+            allAnalyzedFixtures.push(...chunk); // Fallback to unanalyzed for this chunk
+        }
+    }
+
+    return allAnalyzedFixtures;
 };
 
 export const getFixtures = async (
@@ -294,7 +290,21 @@ export const getFixtures = async (
     const dateKey = format(date, "yyyy-MM-dd");
     const nairobiNow = getNairobiNow();
 
-    // 1. Try Firestore Cache (Skip if forceRefresh)
+    // 1. Try Redis (L1 Cache)
+    const redisKey = `fixtures:${sport}:${dateKey}`;
+    if (!forceRefresh && isRedisEnabled()) {
+        try {
+            const cached = await redis.get<Fixture[]>(redisKey);
+            if (cached && cached.length > 0) {
+                console.log(`[Redis Hit] Serving ${cached.length} ${sport} fixtures for ${dateKey}`);
+                return cached;
+            }
+        } catch (err) {
+            console.error("Redis Read Error", err);
+        }
+    }
+
+    // 2. Try Firestore Cache (Skip if forceRefresh)
     let fixtures: Fixture[] = [];
     if (!forceRefresh) {
         try {
@@ -308,6 +318,13 @@ export const getFixtures = async (
             if (!querySnapshot.empty) {
                 fixtures = querySnapshot.docs.map(doc => doc.data() as Fixture);
                 console.log(`[Cache Hit] Serving ${fixtures.length} ${sport} fixtures for ${dateKey}`);
+
+                // Back-fill Redis for next time
+                if (isRedisEnabled()) {
+                    const isPast = new Date(dateKey) < new Date(getNairobiNow().toISOString().split('T')[0]);
+                    const ttl = isPast ? 86400 : 600; // 24h for past, 10m for future/today
+                    await redis.set(redisKey, fixtures, { ex: ttl });
+                }
             }
         } catch (err) {
             console.error("Cache Read Error", err);
@@ -347,6 +364,13 @@ export const getFixtures = async (
                 });
                 await batch.commit();
                 console.log(`[Cache Update] Saved ${fixtures.length} analyzed ${sport} matches for ${dateKey}.`);
+
+                // Update Redis too
+                if (isRedisEnabled()) {
+                    const isPastDate = new Date(dateKey) < new Date(getNairobiNow().toISOString().split('T')[0]);
+                    const ttl = isPastDate ? 86400 : 600; // 24h for past, 10m for future
+                    await redis.set(redisKey, fixtures, { ex: ttl });
+                }
             } catch (err) {
                 console.error("Cache Write Error", err);
             }

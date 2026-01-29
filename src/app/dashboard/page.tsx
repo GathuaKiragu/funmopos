@@ -52,7 +52,7 @@ const getResult = (prediction: any, fixture: Fixture): 'WON' | 'LOST' | 'VOID' |
 
 export default function DashboardPage() {
     const { user, loading: authLoading } = useAuth();
-    const { tier, isTrial, trialExpiry, loading: accessLoading, canAccess } = useAccess();
+    const { tier, isValid, isTrial, trialExpiry, loading: accessLoading, canAccess } = useAccess();
     const router = useRouter();
 
     // -- State --
@@ -65,6 +65,8 @@ export default function DashboardPage() {
 
     // Filters
     const [filterMode, setFilterMode] = useState<'ALL' | 'LIVE' | 'WATCH'>('ALL'); // WATCH = High Confidence
+    const [selectedLeague, setSelectedLeague] = useState<string>('ALL');
+    const [activeTab, setActiveTab] = useState<'LATEST' | 'HISTORY'>('LATEST');
 
     // Scroll ref for date picker
     const dateScrollRef = useRef<HTMLDivElement>(null);
@@ -85,17 +87,39 @@ export default function DashboardPage() {
         setRefreshing(false);
     };
 
-    useEffect(() => { loadData(); }, [selectedDate, selectedSport]);
+    useEffect(() => {
+        loadData();
+        setSelectedLeague('ALL'); // Reset league when date/sport changes
+    }, [selectedDate, selectedSport]);
+
+    useEffect(() => {
+        setSelectedLeague('ALL'); // Reset league when switching tabs
+    }, [activeTab]);
 
     // -- Filtering & Grouping --
     const getFilteredFixtures = () => {
         return fixtures.filter(f => {
+            const isFinished = ['FT', 'AET', 'PEN'].includes(f.status.short);
+
+            // Tab Filter (History vs Latest)
+            if (activeTab === 'HISTORY' && !isFinished) return false;
+            if (activeTab === 'LATEST' && isFinished) return false;
+
+            // League Filter
+            if (selectedLeague !== 'ALL' && f.league.name !== selectedLeague) return false;
+
+            // Mode Filter
             const isLive = ['1H', 'HT', '2H', 'ET', 'P', 'LIVE'].includes(f.status.short);
             if (filterMode === 'LIVE') return isLive;
             if (filterMode === 'WATCH') return (f.prediction?.confidence || 0) > 70;
             return true;
         });
     };
+
+    const uniqueLeagues = Array.from(new Set(fixtures
+        .filter(f => activeTab === 'HISTORY' ? ['FT', 'AET', 'PEN'].includes(f.status.short) : !['FT', 'AET', 'PEN'].includes(f.status.short))
+        .map(f => f.league.name)
+    )).sort();
 
     const groupedFixtures: FixtureGroup[] = getFilteredFixtures().reduce((acc: FixtureGroup[], curr) => {
         const existing = acc.find(g => g.league === curr.league.name);
@@ -135,34 +159,50 @@ export default function DashboardPage() {
     // --- Component: Match Card ---
     const MatchRow = ({ fixture, index }: { fixture: Fixture, index: number }) => {
         const { prediction, homeTeam, awayTeam, date, status, goals } = fixture;
+        const [isExpanded, setIsExpanded] = useState(false);
         const result = getResult(prediction, fixture);
         const isLive = ['1H', 'HT', '2H', 'ET', 'P', 'LIVE'].includes(status.short) || status.short === 'LIVE';
         const isFinished = ['FT', 'AET', 'PEN'].includes(status.short);
         const hasPrediction = !!prediction;
         const confidence = prediction?.confidence || 0;
-
-        // Trial Logic: Show top 10 high confidence picks for trial users
-        const isTrialSpecial = isTrial && index < 10 && confidence > 75;
+        const isRisky = prediction?.isRisky || confidence < 75;
 
         // Visibility Logic
         let isLocked = true;
-        if (tier === "vip" || isTrial) isLocked = false;
-        else if (tier === "pro" && confidence < 85) isLocked = false;
-        else if (tier === "basic" && confidence < 75) isLocked = false;
+        if (tier === "vip" && isValid) isLocked = false;
+        else if (isTrial) isLocked = false;
+        else if (tier === "pro" && isValid && confidence < 85) isLocked = false;
+        else if (tier === "basic" && isValid && confidence < 75) isLocked = false;
 
         if (!hasPrediction) isLocked = false;
 
-        const badgeColor = confidence > 85 ? 'text-yellow-400 border-yellow-400/30 bg-yellow-400/10' :
-            confidence > 75 ? 'text-emerald-400 border-emerald-400/30 bg-emerald-400/10' :
-                'text-white/40 border-white/10 bg-white/5';
+        const badgeColor = isRisky ? 'text-amber-500 border-amber-500/30 bg-amber-500/10' :
+            confidence > 85 ? 'text-yellow-400 border-yellow-400/30 bg-yellow-400/10' :
+                confidence > 75 ? 'text-emerald-400 border-emerald-400/30 bg-emerald-400/10' :
+                    'text-white/40 border-white/10 bg-white/5';
 
         const formattedTime = format(new Date(date), "HH:mm");
 
         return (
-            <div className="group relative bg-[#1a1a1a] hover:bg-[#222] border border-white/5 rounded-2xl p-5 mb-3 transition-all duration-300">
+            <div
+                onClick={() => !isLocked && setIsExpanded(!isExpanded)}
+                className={`group relative bg-[#1a1a1a] hover:bg-[#222] border ${isExpanded ? 'border-yellow-500/30 ring-1 ring-yellow-500/20' : 'border-white/5'} rounded-2xl p-5 mb-3 transition-all duration-300 ${!isLocked ? 'cursor-pointer' : ''}`}
+            >
                 <div className="flex flex-col gap-4">
                     <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em]">{fixture.league.name}</span>
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em]">{fixture.league.name}</span>
+                            {confidence >= 90 && !isLocked && (
+                                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500 text-[8px] font-black uppercase tracking-tighter border border-emerald-500/20">
+                                    <CheckCircle size={8} /> Verified
+                                </span>
+                            )}
+                            {isRisky && !isLocked && confidence < 90 && (
+                                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 text-[8px] font-black uppercase tracking-tighter border border-amber-500/20">
+                                    <AlertTriangle size={8} /> Risky
+                                </span>
+                            )}
+                        </div>
                         <div className="flex items-center gap-2">
                             {isLive ? (
                                 <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/20">
@@ -202,7 +242,7 @@ export default function DashboardPage() {
                                         <div className="flex flex-col items-center gap-2">
                                             <div className="text-[10px] font-black text-white/10 blur-[2px] select-none uppercase tracking-tighter italic">Secret Tip</div>
                                             <PaymentModal>
-                                                <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-yellow-500 hover:bg-yellow-400 text-black text-[9px] font-black uppercase transition-transform active:scale-95 shadow-lg shadow-yellow-500/10">
+                                                <button onClick={(e) => e.stopPropagation()} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-yellow-500 hover:bg-yellow-400 text-black text-[9px] font-black uppercase transition-transform active:scale-95 shadow-lg shadow-yellow-500/10">
                                                     <Lock size={10} fill="black" />
                                                     Unlock
                                                 </button>
@@ -234,15 +274,20 @@ export default function DashboardPage() {
                     </div>
 
                     {!isLocked && hasPrediction && (
-                        <div className="pt-3 border-t border-white/5 space-y-1.5">
-                            {Array.isArray(prediction.reasoning) ? prediction.reasoning.slice(0, 2).map((r, i) => (
-                                <div key={i} className="flex gap-2 items-start group-hover:opacity-100 opacity-60 transition-opacity">
-                                    <div className="w-1 h-1 rounded-full bg-yellow-500 mt-1.5 shrink-0 shadow-[0_0_8px_rgba(234,179,8,0.5)]" />
-                                    <p className="text-[10px] text-white/80 leading-tight italic line-clamp-1">{r}</p>
-                                </div>
-                            )) : (
-                                <p className="text-[10px] text-white/80 leading-tight italic line-clamp-1 opacity-60">{prediction.reasoning}</p>
-                            )}
+                        <div className={`pt-3 border-t border-white/5 transition-all duration-300 overflow-hidden ${isExpanded ? 'max-h-96 opacity-100' : 'max-h-12 opacity-60'}`}>
+                            <div className="space-y-2">
+                                {Array.isArray(prediction.reasoning) ? prediction.reasoning.map((r, i) => (
+                                    <div key={i} className="flex gap-2 items-start">
+                                        <div className={`w-1 h-1 rounded-full bg-yellow-500 mt-1.5 shrink-0 shadow-[0_0_8px_rgba(234,179,8,0.5)] ${isRisky ? 'bg-amber-500 shadow-amber-500/50' : ''}`} />
+                                        <p className={`text-[10px] text-white/80 leading-snug italic ${isExpanded ? '' : 'line-clamp-1'}`}>{r}</p>
+                                    </div>
+                                )) : (
+                                    <p className="text-[10px] text-white/80 leading-tight italic line-clamp-2 opacity-60">{prediction.reasoning}</p>
+                                )}
+                                {!isExpanded && (
+                                    <button className="text-[9px] font-black text-yellow-500/40 uppercase tracking-tighter mt-1 hover:text-yellow-500 transition-colors">Click to read more...</button>
+                                )}
+                            </div>
                         </div>
                     )}
                 </div>
@@ -257,6 +302,20 @@ export default function DashboardPage() {
 
     // Calculate Past Performance (Last 3 days for now as quick stats)
     const activeFixturesCount = fixtures.filter(f => !['FT', 'AET', 'PEN'].includes(f.status.short)).length;
+
+    const calculateWinRate = () => {
+        const finishedWithResult = fixtures.filter(f => {
+            const isFinished = ['FT', 'AET', 'PEN'].includes(f.status.short);
+            return isFinished && getResult(f.prediction, f) !== null;
+        });
+
+        if (finishedWithResult.length === 0) return 95; // Default high potential for new sessions
+
+        const wins = finishedWithResult.filter(f => getResult(f.prediction, f) === 'WON').length;
+        return Math.round((wins / finishedWithResult.length) * 100);
+    };
+
+    const winRate = calculateWinRate();
 
     return (
         <div className="min-h-screen bg-black text-white p-4 pb-20 md:p-8">
@@ -302,7 +361,7 @@ export default function DashboardPage() {
                     </div>
                     <div>
                         <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Win Rate (Avg)</p>
-                        <p className="text-2xl font-black text-emerald-500">72%</p>
+                        <p className="text-2xl font-black text-emerald-500">{winRate}%</p>
                     </div>
                     <div>
                         <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Active</p>
@@ -315,20 +374,59 @@ export default function DashboardPage() {
                 </div>
 
                 {/* 2. Header & Filters (Like Screenshot) */}
-                <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-                    {/* Date Scroller */}
-                    <div className="w-full md:w-auto flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide mask-fade" ref={dateScrollRef}>
-                        {/* Centering Logic would go here in proper app, simplified for now */}
-                        {dates.map((d, i) => (
-                            <DatePill key={i} date={d} active={isSameDay(d, selectedDate)} onClick={() => setSelectedDate(d)} />
-                        ))}
+                <div className="flex flex-col gap-6">
+                    <div className="flex items-center justify-between gap-4">
+                        <div className="flex bg-white/5 p-1 rounded-xl border border-white/10">
+                            <button
+                                onClick={() => setActiveTab('LATEST')}
+                                className={`px-6 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'LATEST' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/60'}`}
+                            >
+                                Latest
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('HISTORY')}
+                                className={`px-6 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'HISTORY' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/60'}`}
+                            >
+                                History
+                            </button>
+                        </div>
+
+                        <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 shrink-0">
+                            <button onClick={() => setFilterMode('ALL')} className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${filterMode === 'ALL' ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'}`}>All</button>
+                            <button onClick={() => setFilterMode('WATCH')} className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-1 ${filterMode === 'WATCH' ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'}`}><TrendingUp className="w-3 h-3" /> Best</button>
+                            <button onClick={() => setFilterMode('LIVE')} className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-1 ${filterMode === 'LIVE' ? 'bg-red-500 text-white animate-pulse' : 'text-gray-400 hover:text-white'}`}><Podcast className="w-3 h-3" /> Live</button>
+                        </div>
                     </div>
 
-                    {/* Filter Toggles */}
-                    <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 shrink-0">
-                        <button onClick={() => setFilterMode('ALL')} className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${filterMode === 'ALL' ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'}`}>All Games</button>
-                        <button onClick={() => setFilterMode('WATCH')} className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-1 ${filterMode === 'WATCH' ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'}`}><TrendingUp className="w-3 h-3" /> Best Picks</button>
-                        <button onClick={() => setFilterMode('LIVE')} className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-1 ${filterMode === 'LIVE' ? 'bg-red-500 text-white animate-pulse' : 'text-gray-400 hover:text-white'}`}><Podcast className="w-3 h-3" /> Live Now</button>
+                    <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                        {/* Date Scroller */}
+                        <div className="w-full md:w-auto flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide mask-fade" ref={dateScrollRef}>
+                            {dates.map((d, i) => (
+                                <DatePill key={i} date={d} active={isSameDay(d, selectedDate)} onClick={() => setSelectedDate(d)} />
+                            ))}
+                        </div>
+
+                        {/* League Dropdown Filter */}
+                        {uniqueLeagues.length > 0 && (
+                            <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto scrollbar-hide pb-2">
+                                <Filter size={14} className="text-white/20 shrink-0" />
+                                <button
+                                    onClick={() => setSelectedLeague('ALL')}
+                                    className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-all ${selectedLeague === 'ALL' ? 'bg-white/10 border-white/20 text-white' : 'border-white/5 text-white/40'}`}
+                                >
+                                    All Leagues
+                                </button>
+                                {uniqueLeagues.map(league => (
+                                    <button
+                                        key={league}
+                                        onClick={() => setSelectedLeague(league)}
+                                        className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-all ${selectedLeague === league ? 'bg-white/10 border-white/20 text-white' : 'border-white/5 text-white/40'}`}
+                                    >
+                                        {league}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
 

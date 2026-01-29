@@ -51,6 +51,25 @@ export async function POST(request: Request) {
         try {
             // Try to find user by phone number
             userRecord = await auth.getUserByPhoneNumber(formattedPhone);
+
+            // For existing auth users, ensure they have a Firestore document
+            const userDocRef = db.collection("users").doc(userRecord.uid);
+            const userDocSnap = await userDocRef.get();
+
+            if (!userDocSnap.exists) {
+                console.log("Found existing auth user without Firestore doc, creating one:", userRecord.uid);
+                const trialExpiry = new Date();
+                trialExpiry.setHours(trialExpiry.getHours() + 24);
+
+                await userDocRef.set({
+                    phoneNumber: formattedPhone,
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                    displayName: userRecord.displayName || "User",
+                    tier: 'pro',
+                    subscriptionExpiry: admin.firestore.Timestamp.fromDate(trialExpiry),
+                    bankroll: 0
+                });
+            }
         } catch (error: any) {
             if (error.code === 'auth/user-not-found') {
                 // Create new user

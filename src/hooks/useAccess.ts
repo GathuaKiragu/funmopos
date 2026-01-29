@@ -79,7 +79,7 @@ export function useAccess(): AccessState {
                 setExpiry(subscriptionExpiryDate);
                 setReceiptEmail(userReceiptEmail);
 
-                // Trial Logic: first 24 hours
+                // Trial Logic: first 24 hours from creation
                 const created = safeToDate(data.createdAt);
                 if (created) {
                     const now = new Date();
@@ -92,9 +92,8 @@ export function useAccess(): AccessState {
             } else {
                 setTier("free");
                 setIsValid(false);
-                setIsTrial(true);
-                // For new users without doc yet, assume 24h from now
-                setTrialExpiry(new Date(Date.now() + 24 * 60 * 60 * 1000));
+                setIsTrial(false);
+                setTrialExpiry(undefined);
                 setExpiry(undefined);
                 setReceiptEmail("noreply@funmo.africa");
             }
