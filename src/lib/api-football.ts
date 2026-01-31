@@ -35,6 +35,7 @@ export interface Fixture {
         picked: string;
         confidence: number;
         reasoning: string | string[]; // Backwards compatible
+        analysis?: string; // New: Detailed comprehensive analysis
         type: "result" | "goals" | "score";
         isRisky: boolean;
         requiresTier: "free" | "basic" | "standard" | "vip";
@@ -78,15 +79,21 @@ const fetchFromApi = async (targetDate: Date, sport: Sport = "football"): Promis
     const targetDateKey = format(targetDate, "yyyy-MM-dd");
 
     try {
+        const validHeaders: any = {
+            'x-apisports-key': API_KEY
+        };
+
+        // Only add RapidAPI headers if actually using RapidAPI host
+        if (API_HOST?.includes('rapidapi')) {
+            validHeaders['x-rapidapi-host'] = API_HOST;
+            validHeaders['x-rapidapi-key'] = API_KEY;
+        }
+
         const response = await axios.get(`${BASE_URL}/fixtures`, {
             params: {
                 date: targetDateKey,
             },
-            headers: {
-                'x-apisports-key': API_KEY,
-                'x-rapidapi-host': API_HOST,
-                'x-rapidapi-key': API_KEY
-            }
+            headers: validHeaders
         });
 
         const rawFixtures = response.data.response;
@@ -158,7 +165,8 @@ const fetchTeamNews = async (home: string, away: string): Promise<string> => {
     }
 };
 
-// AI Analysis with DeepSeek
+
+// AI Analysis with DeepSeek (Enhanced with Football Highlights API)
 const analyzeFixtures = async (fixtures: Fixture[]): Promise<Fixture[]> => {
     if (!DEEPSEEK_KEY || fixtures.length === 0) return fixtures;
 
@@ -177,8 +185,13 @@ const analyzeFixtures = async (fixtures: Fixture[]): Promise<Fixture[]> => {
         const chunk = fixtureChunks[i];
         console.log(`[AI Analysis] Processing chunk ${i + 1}/${fixtureChunks.length} (${chunk.length} matches)...`);
 
-        // 1. Fetch News for matches in this chunk in parallel
-        const fixturesWithNews = await Promise.all(chunk.map(async (f) => {
+        // STEP 1: Enrich fixtures with Football Highlights API data
+        console.log(`[AI Analysis] Enriching chunk ${i + 1} with Football Highlights API data...`);
+        const { enrichFixtures, buildEnrichedContext } = await import('./match-enrichment-service');
+        const enrichedChunk = await enrichFixtures(chunk, 5); // Max 5 concurrent API calls
+
+        // STEP 2: Fetch News for matches in this chunk in parallel
+        const fixturesWithNewsAndData = await Promise.all(enrichedChunk.map(async (f) => {
             const news = await fetchTeamNews(f.homeTeam.name, f.awayTeam.name);
             return {
                 ...f,
@@ -186,11 +199,13 @@ const analyzeFixtures = async (fixtures: Fixture[]): Promise<Fixture[]> => {
             };
         }));
 
-        const fixturesData = fixturesWithNews.map(f => ({
+        // STEP 3: Build enriched data for AI prompt
+        const fixturesData = fixturesWithNewsAndData.map(f => ({
             id: f.id,
             match: `${f.homeTeam.name} vs ${f.awayTeam.name}`,
             league: f.league.name,
-            news_headlines: f.newsContext || "No recent news found."
+            news_headlines: f.newsContext || "No recent news found.",
+            enriched_data: buildEnrichedContext(f.enrichedData)
         }));
 
         const prompt = `
@@ -198,19 +213,30 @@ const analyzeFixtures = async (fixtures: Fixture[]): Promise<Fixture[]> => {
             Your goal is NOT just to pick winners, but to identify POSITIVE EXPECTED VALUE (+EV) based on genuine probability vs market perception.
 
             INPUT DATA:
-            ${JSON.stringify(fixturesData)}
+            ${JSON.stringify(fixturesData, null, 2)}
 
             MODELS TO APPLY:
             1. **Poisson Distribution**: Estimate Expected Goals (xG) for both teams based on recent attack/defense ratings.
             2. **Elo/Power Ratings**: Compare raw squad strength.
             3. **Contextual Impact**: Adjust for "Must Win" situations, severe injuries (using the provided news), and Hostile Atmosphere.
             4. **Variance Analysis**: If a result relies on luck (e.g., a lucky 1-0 win streak), REGRESS it to the mean.
+            5. **Market Efficiency**: Compare your probability against the provided bookmaker odds to identify value.
 
-            EXECUTION STEPS:
-            1. Parse the provided NEWS HEADLINES. If a key player (Top Scorer/Captain/Playmaker) is missing, penalize the team by 15-20% immediately.
-            2. Calculate the "True Probability" of each outcome (Home/Draw/Away).
-            3. Compare your probability against standard market odds trends.
-            4. Select the outcome with the highest confidence relative to risk.
+            CRITICAL INSTRUCTIONS:
+            1. **USE THE ENRICHED DATA**: You now have access to REAL statistics including:
+               - Team performance metrics (wins, losses, goals scored/conceded)
+               - Expected Goals (xG) data from recent matches
+               - Bookmaker odds for market comparison
+               - Venue, weather, and referee information
+               - Match events and statistics
+            
+            2. **Parse NEWS HEADLINES**: If a key player (Top Scorer/Captain/Playmaker) is missing, penalize the team by 15-20% immediately.
+            
+            3. **Calculate "True Probability"**: Use the enriched data to calculate accurate probabilities for each outcome (Home/Draw/Away).
+            
+            4. **Identify Value Bets**: Compare your calculated probability against the provided market odds. If your probability suggests better value than the odds imply, increase confidence.
+            
+            5. **Select the outcome** with the highest confidence relative to risk.
 
             OUTPUT REQUIREMENTS:
             - **picked**: The specific market (e.g., "Arsenal Win", "Over 2.5 Goals", "BTTS Yes").
@@ -219,23 +245,34 @@ const analyzeFixtures = async (fixtures: Fixture[]): Promise<Fixture[]> => {
                 - 85-94%: "Strong Edge" (High probability value).
                 - 75-84%: "Value Play" (Solid edge).
                 - <75%: "Risky/Lean" (Mark isRisky: true).
-            - **reasoning**: Array of 3 short, punchy, data-driven points.
-                - Point 1: Statistical edge (e.g., "xG suggests underperformance...").
-                - Point 2: Tactical/News factor (e.g., "Kane injury leaves hole in attack").
-                - Point 3: Comparison (e.g., "Home form > Away weakness").
+            - **reasoning**: Array of 3 short, punchy, data-driven points (max 15 words each) for the card summary.
+            - **analysis**: A STRUCTURED, 200-WORD ANALYSIS separated by '###' headers.
+                - Format MUST be exactly as follows:
+                ### Overview
+                (2-3 sentences setting the scene, form, and tactical context)
+                
+                ### Key Points
+                (Bullet points of key stats/tactics, e.g.)
+                • Point 1
+                • Point 2
+                • Point 3
+                
+                ### Expectation
+                (Final verdict and prediction reasoning)
+
             - **type**: "result" | "goals" | "score".
             - **isRisky**: true if confidence < 75%.
             - **requiresTier**: "vip" for confidence >= 90%, "standard" for 80-89%, "basic" for 70-79%, "free" otherwise.
 
             Return strictly a JSON array:
-            [{"id": number, "picked": string, "confidence": number, "reasoning": string[], "type": "result"|"goals"|"score", "isRisky": boolean, "requiresTier": string}]
+            [{"id": number, "picked": string, "confidence": number, "reasoning": string[], "analysis": string, "type": "result"|"goals"|"score", "isRisky": boolean, "requiresTier": string}]
         `;
 
         try {
             const response = await axios.post(DEEPSEEK_URL, {
                 model: "deepseek-chat",
                 messages: [
-                    { role: "system", content: "You are a professional betting analyst. You verify facts before predicting." },
+                    { role: "system", content: "You are a professional betting analyst with access to real-time statistics. You verify facts and use data-driven analysis before predicting." },
                     { role: "user", content: prompt }
                 ],
                 response_format: { type: "json_object" }
@@ -261,6 +298,7 @@ const analyzeFixtures = async (fixtures: Fixture[]): Promise<Fixture[]> => {
                             picked: pred.picked,
                             confidence: pred.confidence,
                             reasoning: pred.reasoning || ["AI analysis based on recent form and stats."],
+                            analysis: pred.analysis || "Full analysis pending.",
                             type: pred.type,
                             isRisky: pred.isRisky,
                             requiresTier: pred.requiresTier
@@ -280,6 +318,7 @@ const analyzeFixtures = async (fixtures: Fixture[]): Promise<Fixture[]> => {
 
     return allAnalyzedFixtures;
 };
+
 
 export const getFixtures = async (
     date: Date,
@@ -336,15 +375,30 @@ export const getFixtures = async (
         // If no fixtures, obviously not stale (it's a miss)
         if (fixtures.length === 0) return true;
 
-        // Check for matches that should have finished but are still TBD or NS
         const now = getNairobiNow();
-        return fixtures.some(f => {
+
+        // Check for matches that should have finished but are still TBD or NS
+        const statusStale = fixtures.some(f => {
             const matchDate = new Date(f.date);
             // If match started more than 2.5 hours ago but isn't finished
             const startedLongAgo = matchDate.getTime() < (now.getTime() - (150 * 60000));
             const isUnfinished = !finishedStates.includes(f.status.short);
             return startedLongAgo && isUnfinished;
         });
+
+        // NEW: Check if we are missing the 'analysis' field for upcoming detailed views
+        // This ensures old cached predictions get upgraded to the new format
+        const analysisStale = fixtures.some(f => {
+            const matchDate = new Date(f.date);
+            const isFuture = matchDate > now;
+            const hasPrediction = !!f.prediction;
+            const missingAnalysis = !f.prediction?.analysis;
+
+            // Only force refresh if it's a future game with a prediction but NO analysis
+            return isFuture && hasPrediction && missingAnalysis;
+        });
+
+        return statusStale || analysisStale;
     };
 
     if (fixtures.length === 0 || forceRefresh || isStale(fixtures)) {

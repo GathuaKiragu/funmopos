@@ -18,33 +18,28 @@ interface PaymentModalProps {
 const PRICING = {
     KES: {
         symbol: "KES",
-        tiers: [
-            { id: "basic", price: 50 },
-            { id: "pro", price: 100 },
-            { id: "vip", price: 300 }
+        packages: [
+            { id: "daily", name: "Daily Pass", price: 100, days: 1, label: "Today's Tips" },
+            { id: "3day", name: "3-Day Bundle", price: 250, days: 3, label: "Best Value" },
+            { id: "weekly", name: "Weekly Access", price: 500, days: 7, label: "Most Popular" }
         ]
     },
     USD: {
         symbol: "$",
-        tiers: [
-            { id: "basic", price: 1 },
-            { id: "pro", price: 2 },
-            { id: "vip", price: 5 }
+        packages: [
+            { id: "daily", name: "Daily Pass", price: 1, days: 1, label: "Today" },
+            { id: "3day", name: "3-Day Bundle", price: 2.50, days: 3, label: "Best Value" },
+            { id: "weekly", name: "Weekly Access", price: 5, days: 7, label: "Most Popular" }
         ]
     }
 };
 
-const FEATURES = {
-    basic: ["Standard Predictions", "Basic Confidence Tips", "Valid until 23:59 EAT"],
-    pro: ["High Confidence Tips", "Expert Analysis", "Valid until 23:59 EAT"],
-    vip: ["ALL PREDICTIONS", "VIP Lock Picks (Highest Accuracy)", "Full Data Access", "Valid until 23:59 EAT"]
-};
-
-const TIER_NAMES = {
-    basic: "Starter Pak",
-    pro: "Pro Pack",
-    vip: "Ultimate VIP"
-};
+const COMMON_FEATURES = [
+    "ALL PREDICTIONS Unlocked",
+    "VIP Lock Picks (Highest Accuracy)",
+    "Full Data Access",
+    "Valid until 23:59 EAT (Last Day)"
+];
 
 // Fixed exchange rate for processing international payments in KES
 const USD_TO_KES = 135;
@@ -53,32 +48,41 @@ export function PaymentModal({ children }: PaymentModalProps) {
     const { user } = useAuth();
     const { tier, receiptEmail } = useAccess();
     const { currency, loading: locLoading, toggleCurrency } = useLocation();
-    const [selectedTier, setSelectedTier] = useState<string | null>("pro");
+    const [selectedPackageId, setSelectedPackageId] = useState<string | null>("daily"); // Default to daily
     const [isOpen, setIsOpen] = useState(false);
     const [success, setSuccess] = useState(false);
 
     // Paystack Config
     const publicKey = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || "pk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
 
-    const getPrice = (tierId: string) => {
+    const getPackage = (id: string) => {
         const config = PRICING[currency];
-        return config.tiers.find(t => t.id === tierId)?.price || 0;
+        return config.packages.find(p => p.id === id);
     };
 
     const handleSuccess = async (reference: any) => {
-        if (!user || !selectedTier) return;
+        if (!user || !selectedPackageId) return;
+
+        const pkg = getPackage(selectedPackageId);
+        if (!pkg) return;
 
         try {
             const userRef = doc(db, "users", user.uid);
             const now = new Date();
             const expiry = new Date(now);
+
+            // Calculate expiry: Today + (days - 1)
+            // If 1 day: Today + 0.
+            // If 3 days: Today + 2.
+            expiry.setDate(expiry.getDate() + (pkg.days - 1));
             expiry.setHours(23, 59, 59, 999);
 
             await setDoc(userRef, {
                 subscriptionStatus: "active",
-                tier: selectedTier,
+                tier: "vip", // All paid packages grant VIP access
                 subscriptionExpiry: expiry,
                 lastPaymentRef: reference.reference,
+                lastPackageId: selectedPackageId,
                 updatedAt: serverTimestamp()
             }, { merge: true });
 
@@ -87,7 +91,8 @@ export function PaymentModal({ children }: PaymentModalProps) {
                 userId: user.uid,
                 amount: processingAmount,
                 currency: "KES",
-                tier: selectedTier,
+                packageId: selectedPackageId,
+                tier: "vip",
                 reference: reference.reference,
                 status: "success",
                 provider: "paystack",
@@ -111,12 +116,11 @@ export function PaymentModal({ children }: PaymentModalProps) {
         console.log("Payment closed");
     };
 
-    const currentPrice = selectedTier ? getPrice(selectedTier) : 0;
+    const currentPackage = selectedPackageId ? getPackage(selectedPackageId) : null;
+    const currentPrice = currentPackage ? currentPackage.price : 0;
     const currentSymbol = PRICING[currency].symbol;
 
     // Paystack Processing Logic:
-    // To avoid "Currency not supported" errors on standard Kenyan accounts,
-    // we process all transactions in KES, but show USD prices to the user.
     const processingAmount = currency === 'USD'
         ? Math.round(currentPrice * USD_TO_KES)
         : currentPrice;
@@ -124,7 +128,7 @@ export function PaymentModal({ children }: PaymentModalProps) {
     const componentProps = {
         email: receiptEmail || user?.email || "noreply@funmo.africa",
         amount: processingAmount * 100, // Always cents/kobo
-        currency: "KES", // Always process in KES to ensure account compatibility
+        currency: "KES", // Always process in KES
         publicKey,
         text: `Pay ${currentSymbol}${currentPrice}`,
         onSuccess: handleSuccess,
@@ -140,20 +144,19 @@ export function PaymentModal({ children }: PaymentModalProps) {
             </DialogTrigger>
             <DialogContent className="bg-neutral-900 border-white/10 text-white max-w-2xl">
                 <DialogHeader>
-                    <DialogTitle className="text-2xl font-bold text-center mb-2">Select Your Access Pass</DialogTitle>
+                    <DialogTitle className="text-2xl font-bold text-center mb-2">Unlock Full Access</DialogTitle>
                     <DialogDescription className="text-center text-gray-400">
-                        Unlock premium AI predictions. Access is defined by End-of-Day (23:59 EAT).
+                        Get instant access to all VIP predictions and expert analysis.
                     </DialogDescription>
                 </DialogHeader>
 
                 {success ? (
-                    /* ... (unchanged success view) ... */
                     <div className="flex flex-col items-center justify-center p-12 text-center text-emerald-500 animate-in fade-in zoom-in duration-300">
                         <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center mb-4">
                             <Check className="w-8 h-8" />
                         </div>
                         <h2 className="text-2xl font-bold">Payment Successful!</h2>
-                        <p className="text-white mt-2">Your dashboard has been unlocked.</p>
+                        <p className="text-white mt-2">Your VIP access has been activated.</p>
                     </div>
                 ) : (
                     <div className="flex flex-col">
@@ -173,15 +176,15 @@ export function PaymentModal({ children }: PaymentModalProps) {
                         </div>
 
                         <div className="grid md:grid-cols-3 gap-4">
-                            {['basic', 'pro', 'vip'].map((tierId) => {
-                                const price = getPrice(tierId);
-                                const isBestValue = tierId === 'pro';
+                            {PRICING[currency].packages.map((pkg) => {
+                                const isSelected = selectedPackageId === pkg.id;
+                                const isBestValue = pkg.id === '3day'; // or based on logic
 
                                 return (
                                     <div
-                                        key={tierId}
-                                        onClick={() => setSelectedTier(tierId)}
-                                        className={`cursor-pointer relative p-4 rounded-xl border-2 transition-all ${selectedTier === tierId
+                                        key={pkg.id}
+                                        onClick={() => setSelectedPackageId(pkg.id)}
+                                        className={`cursor-pointer relative p-4 rounded-xl border-2 transition-all ${isSelected
                                             ? "border-yellow-500 bg-yellow-500/10"
                                             : "border-white/10 bg-white/5 hover:border-white/20"
                                             }`}
@@ -191,21 +194,41 @@ export function PaymentModal({ children }: PaymentModalProps) {
                                                 Best Value
                                             </div>
                                         )}
-                                        <h3 className="font-bold text-lg text-center mb-2">{TIER_NAMES[tierId as keyof typeof TIER_NAMES]}</h3>
-                                        <p className="text-2xl font-bold text-center text-yellow-500 mb-4">
-                                            {currentSymbol} {price} <span className="text-xs text-gray-400 font-normal">/day</span>
+                                        <h3 className="font-bold text-lg text-center mb-2">{pkg.name}</h3>
+                                        <p className="text-2xl font-bold text-center text-yellow-500 mb-2">
+                                            {currentSymbol} {pkg.price}
                                         </p>
-                                        <ul className="space-y-2 mb-6">
-                                            {FEATURES[tierId as keyof typeof FEATURES].map((feature, i) => (
-                                                <li key={i} className="text-xs text-gray-300 flex items-start gap-1.5">
-                                                    <Check className="w-3 h-3 text-emerald-500 mt-0.5 shrink-0" />
-                                                    {feature}
-                                                </li>
-                                            ))}
-                                        </ul>
+                                        <p className="text-xs text-center text-gray-400 mb-4 font-mono uppercase tracking-wider">
+                                            {pkg.days} {pkg.days === 1 ? 'Day' : 'Days'} Access
+                                        </p>
+
+                                        {/* Show simple checkmark if selected, or just list */}
+                                        <div className="flex justify-center">
+                                            {isSelected ? (
+                                                <div className="w-6 h-6 rounded-full bg-yellow-500 flex items-center justify-center">
+                                                    <Check className="w-4 h-4 text-black" />
+                                                </div>
+                                            ) : (
+                                                <div className="w-6 h-6 rounded-full border border-white/20" />
+                                            )}
+                                        </div>
                                     </div>
                                 );
                             })}
+                        </div>
+
+                        <div className="mt-6 p-4 bg-white/5 rounded-xl border border-white/5">
+                            <h4 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
+                                <span className="text-yellow-500">★</span> VIP Benefits Included:
+                            </h4>
+                            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {COMMON_FEATURES.map((feat, i) => (
+                                    <li key={i} className="text-xs text-gray-400 flex items-start gap-1.5">
+                                        <Check className="w-3 h-3 text-emerald-500 mt-0.5 shrink-0" />
+                                        {feat}
+                                    </li>
+                                ))}
+                            </ul>
                         </div>
 
                         <div className="flex flex-col items-center mt-6">

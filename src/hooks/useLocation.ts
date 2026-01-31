@@ -29,7 +29,24 @@ export function useLocation() {
                     return;
                 }
 
-                const res = await fetch('https://ipapi.co/json/');
+                // Fetch with timeout to prevent hanging
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
+                const res = await fetch('https://ipapi.co/json/', {
+                    signal: controller.signal,
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+
+                clearTimeout(timeoutId);
+
+                // Check if response is ok
+                if (!res.ok) {
+                    throw new Error(`IP API returned ${res.status}`);
+                }
+
                 const data = await res.json();
 
                 const country = data.country_code || 'KE';
@@ -43,7 +60,13 @@ export function useLocation() {
                     currency
                 });
             } catch (error) {
-                console.error("Location detection failed, defaulting to KE:", error);
+                // Silently fall back to Kenya - this is expected behavior when IP API is unavailable
+                if (error instanceof Error && error.name === 'AbortError') {
+                    console.warn('[Location] IP geolocation timed out, using default location (KE)');
+                } else {
+                    console.warn('[Location] IP geolocation unavailable, using default location (KE)');
+                }
+
                 setLocation({
                     countryCode: 'KE',
                     loading: false,

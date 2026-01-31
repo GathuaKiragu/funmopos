@@ -7,7 +7,7 @@ import { db } from "@/lib/firebase";
 
 export type AccessLevel = "guest" | "free" | "basic" | "pro" | "vip";
 
-interface AccessState {
+export interface AccessState {
     tier: AccessLevel;
     isValid: boolean;
     isTrial: boolean;
@@ -15,6 +15,7 @@ interface AccessState {
     loading: boolean;
     expiry?: Date;
     receiptEmail?: string;
+    packageId?: string; // e.g., 'daily', '3day', 'weekly'
     canAccess: (requiredTier: AccessLevel) => boolean;
 }
 
@@ -35,6 +36,7 @@ export function useAccess(): AccessState {
     const [loading, setLoading] = useState(true);
     const [expiry, setExpiry] = useState<Date>();
     const [receiptEmail, setReceiptEmail] = useState<string>();
+    const [packageId, setPackageId] = useState<string>();
 
     useEffect(() => {
         if (!user) {
@@ -45,6 +47,7 @@ export function useAccess(): AccessState {
             setLoading(false);
             setExpiry(undefined);
             setReceiptEmail(undefined);
+            setPackageId(undefined);
             return;
         }
 
@@ -62,6 +65,7 @@ export function useAccess(): AccessState {
 
                 const userTier = (data.tier as AccessLevel) || "free";
                 const userReceiptEmail = data.receiptEmail || (data.email && data.email !== "phone-user" ? data.email : "gathua612@gmail.com");
+                const userPackageId = data.lastPackageId; // Read purchase type
 
                 let active = false;
                 let subscriptionExpiryDate: Date | undefined;
@@ -78,6 +82,7 @@ export function useAccess(): AccessState {
                 setIsValid(active);
                 setExpiry(subscriptionExpiryDate);
                 setReceiptEmail(userReceiptEmail);
+                setPackageId(userPackageId);
 
                 // Trial Logic: first 24 hours from creation
                 const created = safeToDate(data.createdAt);
@@ -96,6 +101,7 @@ export function useAccess(): AccessState {
                 setTrialExpiry(undefined);
                 setExpiry(undefined);
                 setReceiptEmail("noreply@funmo.africa");
+                setPackageId(undefined);
             }
             setLoading(false);
         }, (error) => {
@@ -111,5 +117,5 @@ export function useAccess(): AccessState {
         return TIER_LEVELS[tier] >= TIER_LEVELS[requiredTier];
     };
 
-    return { tier, isValid, isTrial, trialExpiry, loading, expiry, receiptEmail, canAccess };
+    return { tier, isValid, isTrial, trialExpiry, loading, expiry, receiptEmail, packageId, canAccess };
 }

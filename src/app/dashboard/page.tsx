@@ -6,9 +6,10 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { getFixturesClient as getFixtures, Fixture, Sport } from "@/lib/api-football";
-import { format, addDays, isSameDay, subDays, isToday, isYesterday, isTomorrow, formatDistanceToNow } from "date-fns";
-import { Trophy, Activity, ChevronRight, ChevronLeft, Lock, AlertTriangle, CheckCircle, TrendingUp, Filter, Podcast, Calendar, User as UserIcon } from "lucide-react";
+import { format, addDays, isSameDay, subDays, isToday, isYesterday, isTomorrow, formatDistanceToNow, differenceInCalendarDays } from "date-fns";
+import { Trophy, Activity, ChevronRight, ChevronLeft, Lock, AlertTriangle, CheckCircle, TrendingUp, Filter, Podcast, Calendar, User as UserIcon, Sparkles } from "lucide-react";
 import { PaymentModal } from "@/components/payment-modal";
+import { MatchAnalysisModal } from "@/components/analysis-modal";
 import { calculateStake } from "@/lib/bankroll";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -52,7 +53,7 @@ const getResult = (prediction: any, fixture: Fixture): 'WON' | 'LOST' | 'VOID' |
 
 export default function DashboardPage() {
     const { user, loading: authLoading } = useAuth();
-    const { tier, isValid, isTrial, trialExpiry, loading: accessLoading, canAccess } = useAccess();
+    const { tier, isValid, isTrial, trialExpiry, loading: accessLoading, canAccess, packageId } = useAccess();
     const router = useRouter();
 
     // -- State --
@@ -136,22 +137,47 @@ export default function DashboardPage() {
         return acc;
     }, []).sort((a, b) => a.league.localeCompare(b.league)); // Could prioritize major leagues here
 
-    // -- Component: Date Pill --
+    // --- Access Logic ---
+    // Calculate max days ahead user can view based on package
+    const getMaxDaysAhead = () => {
+        if (!isValid && !isTrial) return 0; // Expired/Guest = Today only (or locked)
+        if (isTrial) return 0; // Trial = Today
+
+        switch (packageId) {
+            case 'daily': return 0; // Today
+            case '3day': return 2;  // Today + 2 days
+            case 'weekly': return 6; // Today + 6 days
+            default: return 0; // Fallback
+        }
+    };
+
+    const maxDaysAhead = getMaxDaysAhead();
+    const daysFromNow = differenceInCalendarDays(selectedDate, new Date());
+    const isFutureLocked = daysFromNow > maxDaysAhead;
+
+    // --- Component: Date Pill ---
     const DatePill = ({ date, active, onClick }: { date: Date, active: boolean, onClick: () => void }) => {
         let label = format(date, "dd MMM");
         if (isToday(date)) label = "Today";
         if (isYesterday(date)) label = "Yesterday";
         if (isTomorrow(date)) label = "Tomorrow";
 
+        const diff = differenceInCalendarDays(date, new Date());
+        // Simple Lock logic: if it's future and beyond plan
+        const isLockedDate = diff > maxDaysAhead;
+
         return (
             <button
                 onClick={onClick}
-                className={`flex-shrink-0 px-5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${active
+                className={`relative flex-shrink-0 px-5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${active
                     ? "bg-yellow-500 text-black shadow-lg shadow-yellow-500/20 scale-105"
                     : "bg-white/5 text-gray-400 border border-white/5 hover:bg-white/10 hover:border-white/10"
                     }`}
             >
-                {label}
+                <div className="flex items-center gap-1">
+                    {isLockedDate && <Lock size={10} className="mb-0.5" />}
+                    {label}
+                </div>
             </button>
         );
     };
@@ -282,10 +308,30 @@ export default function DashboardPage() {
                                         <p className={`text-[10px] text-white/80 leading-snug italic ${isExpanded ? '' : 'line-clamp-1'}`}>{r}</p>
                                     </div>
                                 )) : (
-                                    <p className="text-[10px] text-white/80 leading-tight italic line-clamp-2 opacity-60">{prediction.reasoning}</p>
+                                    <div className="flex gap-2 items-start">
+                                        <div className="w-1 h-1 rounded-full bg-yellow-500 mt-1.5 shrink-0" />
+                                        <p className="text-[10px] text-white/80 leading-snug italic line-clamp-2">{prediction.reasoning}</p>
+                                    </div>
                                 )}
+
                                 {!isExpanded && (
-                                    <button className="text-[9px] font-black text-yellow-500/40 uppercase tracking-tighter mt-1 hover:text-yellow-500 transition-colors">Click to read more...</button>
+                                    <div onClick={(e) => e.stopPropagation()} className="mt-1">
+                                        <MatchAnalysisModal fixture={fixture} />
+                                    </div>
+                                )}
+
+                                {isExpanded && (
+                                    <div onClick={(e) => e.stopPropagation()} className="mt-3 pt-3 border-t border-white/5">
+                                        <MatchAnalysisModal
+                                            fixture={fixture}
+                                            trigger={
+                                                <Button variant="outline" size="sm" className="w-full border-yellow-500/20 text-yellow-500 hover:bg-yellow-500/10 uppercase text-[10px] tracking-widest font-bold h-8">
+                                                    <TrendingUp className="w-3 h-3 mr-2" />
+                                                    View Detailed Analysis
+                                                </Button>
+                                            }
+                                        />
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -431,7 +477,31 @@ export default function DashboardPage() {
                 </div>
 
                 {/* 3. Content */}
-                {loadingFixtures ? (
+                {isFutureLocked ? (
+                    <div className="py-20 flex flex-col items-center justify-center text-center space-y-6 animate-in zoom-in-95 duration-300">
+                        <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-2 relative">
+                            <Calendar className="w-8 h-8 text-gray-500" />
+                            <div className="absolute -top-1 -right-1 bg-yellow-500 rounded-full p-1.5 shadow-lg">
+                                <Lock size={12} className="text-black" />
+                            </div>
+                        </div>
+                        <div className="max-w-xs">
+                            <h3 className="text-lg font-bold text-white mb-2">Restricted Access</h3>
+                            <div className="text-sm text-gray-400 mb-4">
+                                <span className="block text-white mb-2">Current Plan: <strong className="text-yellow-500 uppercase">{packageId === 'daily' ? 'Daily Pass' : packageId === '3day' ? '3-Day Bundle' : 'Free / Trial'}</strong></span>
+                                {packageId === 'daily' && "You can only view TODAY'S matches. Upgrade to see future predictions."}
+                                {packageId === '3day' && "You can only view matches for the next 2 days. Upgrade to Weekly to see further ahead."}
+                                {!packageId && "Upgrade to unlock future match predictions."}
+                            </div>
+                        </div>
+                        <PaymentModal>
+                            <Button className="bg-yellow-500 hover:bg-yellow-400 text-black font-black uppercase tracking-wider rounded-full px-8">
+                                <Sparkles className="w-4 h-4 mr-2" />
+                                Upgrade Access
+                            </Button>
+                        </PaymentModal>
+                    </div>
+                ) : loadingFixtures ? (
                     <div className="py-20 flex flex-col items-center justify-center text-gray-500">
                         <Activity className="w-8 h-8 animate-spin text-yellow-500 mb-4" />
                         <span className="text-xs font-bold uppercase tracking-widest">Loading Market Data...</span>
@@ -456,11 +526,48 @@ export default function DashboardPage() {
                         ))}
                     </div>
                 ) : (
-                    <div className="py-20 text-center border-2 border-dashed border-white/5 rounded-2xl">
+                    <div className="py-20 text-center border-2 border-dashed border-white/5 rounded-2xl bg-white/[0.02]">
                         <Calendar className="w-12 h-12 text-gray-700 mx-auto mb-4" />
-                        <p className="text-gray-500 font-bold">No matches found.</p>
-                        <p className="text-xs text-gray-600 mt-2">Try selecting a different date or filter.</p>
-                        <Button variant="link" onClick={() => { setFilterMode('ALL'); setSelectedDate(new Date()); }} className="text-yellow-500 text-xs mt-4">Reset Filters</Button>
+                        <p className="text-gray-400 font-bold text-lg mb-2">No matches available</p>
+
+                        {/* Off-season detection */}
+                        {fixtures.length === 0 && !loadingFixtures && (
+                            <div className="max-w-md mx-auto mt-4 space-y-3">
+                                <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-4">
+                                    <p className="text-xs text-yellow-500/80 leading-relaxed">
+                                        <strong className="font-black uppercase tracking-wide">Off-Season Period</strong>
+                                        <br />
+                                        Most major leagues are currently inactive. European leagues typically run August-May.
+                                    </p>
+                                </div>
+
+                                <div className="text-left bg-white/5 rounded-xl p-4 border border-white/10">
+                                    <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-2">What to try:</p>
+                                    <ul className="space-y-2 text-xs text-gray-400">
+                                        <li className="flex items-start gap-2">
+                                            <span className="text-yellow-500 mt-0.5">•</span>
+                                            <span>Check <strong className="text-white">August-May</strong> for European leagues (Premier League, La Liga, etc.)</span>
+                                        </li>
+                                        <li className="flex items-start gap-2">
+                                            <span className="text-yellow-500 mt-0.5">•</span>
+                                            <span>Try <strong className="text-white">February-December</strong> for Brazilian Serie A</span>
+                                        </li>
+                                        <li className="flex items-start gap-2">
+                                            <span className="text-yellow-500 mt-0.5">•</span>
+                                            <span>Use the date picker above to explore different dates</span>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+                        )}
+
+                        <Button
+                            variant="link"
+                            onClick={() => { setFilterMode('ALL'); setSelectedDate(new Date()); setSelectedLeague('ALL'); }}
+                            className="text-yellow-500 text-xs mt-6 hover:text-yellow-400"
+                        >
+                            Reset All Filters
+                        </Button>
                     </div>
                 )}
             </div>
