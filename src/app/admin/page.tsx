@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2, Lock, Users, Database, Activity, TrendingUp, RefreshCw, LogOut, AlertCircle, CheckCircle, Eye, MessageSquare, Clock, History } from "lucide-react";
 import { useRouter } from "next/navigation";
+import BulkSMSPanel from "@/components/admin/bulk-sms-panel";
 
 interface Stats {
     users: { total: number; verified: number; unverified: number };
@@ -308,6 +309,11 @@ export default function AdminPage() {
                             </div>
                         </div>
                     </div>
+                </div>
+
+                {/* Communications Section - Bulk SMS */}
+                <div className="bg-white/5 border border-white/10 rounded-xl p-6 backdrop-blur-sm">
+                    <BulkSMSPanel />
                 </div>
 
                 {/* Stats Grid */}

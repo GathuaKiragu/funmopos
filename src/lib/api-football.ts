@@ -1,6 +1,17 @@
 import { format, subDays, addDays, isPast, addHours } from "date-fns";
 import { db } from "@/lib/firebase";
-import { collection, query, where, getDocs, writeBatch, doc } from "firebase/firestore";
+import {
+    collection,
+    getDocs,
+    query,
+    where,
+    limit,
+    doc,
+    setDoc,
+    getDoc,
+    updateDoc,
+    writeBatch
+} from "firebase/firestore";
 import axios from "axios";
 import { redis, isRedisEnabled } from "@/lib/redis";
 
@@ -30,6 +41,12 @@ export interface Fixture {
     goals: {
         home: number | null;
         away: number | null;
+    };
+    openingOdds?: {
+        home: number;
+        draw: number;
+        away: number;
+        timestamp: number;
     };
     prediction?: {
         picked: string;
@@ -238,13 +255,18 @@ const analyzeFixtures = async (fixtures: Fixture[]): Promise<Fixture[]> => {
             
             5. **Select the outcome** with the highest confidence relative to risk.
 
+            6. **DATA AVAILABILITY CHECK**: 
+               - If \`enriched_data\` contains "No enriched data available", **YOU MUST NOT** assign confidence > 70%.
+               - Mark \`isRisky: true\` automatically if data is missing.
+               - Explicitly state "Limited data availability" in the analysis.
+
             OUTPUT REQUIREMENTS:
             - **picked**: The specific market (e.g., "Arsenal Win", "Over 2.5 Goals", "BTTS Yes").
             - **confidence**: A precise integer (0-100).
-                - 95-100%: "Verified Lock" (Exceptional statistical certainty, <5% variance).
-                - 85-94%: "Strong Edge" (High probability value).
-                - 75-84%: "Value Play" (Solid edge).
-                - <75%: "Risky/Lean" (Mark isRisky: true).
+                - 90-100%: "BANKER" (Requires: Tier 1 League, Lineups Confirmed, Smart Money Agreement).
+                - 80-89%: "High Confidence" (Strong statistical edge, no red flags).
+                - 70-79%: "Medium" (Likely, but some risk).
+                - <70%: "Risky" (Pass or small stake).
             - **reasoning**: Array of 3 short, punchy, data-driven points (max 15 words each) for the card summary.
             - **analysis**: A STRUCTURED, 200-WORD ANALYSIS separated by '###' headers.
                 - Format MUST be exactly as follows:
@@ -291,17 +313,64 @@ const analyzeFixtures = async (fixtures: Fixture[]): Promise<Fixture[]> => {
 
             const analyzedChunk = chunk.map(fixture => {
                 const pred = predictionArray.find((p: any) => p.id === fixture.id);
+
+                // Tier 1 Validation
+                const TIER_1_KEYWORDS = [
+                    "Premier League", "La Liga", "Bundesliga", "Serie A", "Ligue 1",
+                    "Champions League", "Europa League", "Eredivisie", "Primeira Liga",
+                    "World Cup", "Euro", "Copa America", "Libertadores", "Brasileiro",
+                    "Championship"
+                ];
+                const isTier1 = TIER_1_KEYWORDS.some(k => fixture.league.name.includes(k));
+
                 if (pred) {
+                    // Downgrade if not Tier 1 but marked as VIP
+                    let finalConfidence = pred.confidence;
+                    let finalTier = pred.requiresTier;
+                    let finalReasoning = Array.isArray(pred.reasoning) ? [...pred.reasoning] : [typeof pred.reasoning === 'string' ? pred.reasoning : "AI analysis based on recent form and stats."];
+                    let finalIsRisky = pred.isRisky;
+
+                    // 1. Away Game Penalty (-10%)
+                    const pickedRaw = (pred.picked || "").toLowerCase();
+                    const awayIdent = (fixture.awayTeam.name || "").toLowerCase();
+                    if (pickedRaw.includes(awayIdent) || pickedRaw.includes("away")) {
+                        finalConfidence = Math.max(0, finalConfidence - 10);
+                        finalReasoning.push("Confidence penalty: Away match.");
+                    }
+
+                    // 2. European Competition Risk
+                    const EURO_LEAGUES = ["Champions League", "Europa League", "Conference League"];
+                    if (EURO_LEAGUES.some(l => fixture.league.name.includes(l))) {
+                        finalIsRisky = true;
+                        finalReasoning.push("High volatility: European fixture.");
+                    }
+
+                    // 3. Existing Tier 1 Cap Logic
+                    if (finalTier === 'vip' && !isTier1) {
+                        finalConfidence = Math.min(finalConfidence, 85);
+                        finalReasoning.push("Capped confidence: Non-Tier 1 League.");
+                    }
+
+                    // 4. Recalculate Tier & Risk based on finalConfidence
+                    if (finalConfidence < 75) {
+                        finalIsRisky = true;
+                    }
+
+                    if (finalConfidence >= 90) finalTier = 'vip';
+                    else if (finalConfidence >= 80) finalTier = 'standard';
+                    else if (finalConfidence >= 70) finalTier = 'basic';
+                    else finalTier = 'free';
+
                     return {
                         ...fixture,
                         prediction: {
                             picked: pred.picked,
-                            confidence: pred.confidence,
-                            reasoning: pred.reasoning || ["AI analysis based on recent form and stats."],
+                            confidence: finalConfidence,
+                            reasoning: finalReasoning,
                             analysis: pred.analysis || "Full analysis pending.",
                             type: pred.type,
-                            isRisky: pred.isRisky,
-                            requiresTier: pred.requiresTier
+                            isRisky: finalIsRisky,
+                            requiresTier: finalTier
                         }
                     };
                 }
@@ -333,7 +402,7 @@ export const getFixtures = async (
     const redisKey = `fixtures:${sport}:${dateKey}`;
     if (!forceRefresh && isRedisEnabled()) {
         try {
-            const cached = await redis.get<Fixture[]>(redisKey);
+            const cached = await redis?.get<Fixture[]>(redisKey);
             if (cached && cached.length > 0) {
                 console.log(`[Redis Hit] Serving ${cached.length} ${sport} fixtures for ${dateKey}`);
                 return cached;
@@ -362,7 +431,7 @@ export const getFixtures = async (
                 if (isRedisEnabled()) {
                     const isPast = new Date(dateKey) < new Date(getNairobiNow().toISOString().split('T')[0]);
                     const ttl = isPast ? 86400 : 600; // 24h for past, 10m for future/today
-                    await redis.set(redisKey, fixtures, { ex: ttl });
+                    await redis?.set(redisKey, fixtures, { ex: ttl });
                 }
             }
         } catch (err) {
@@ -423,7 +492,7 @@ export const getFixtures = async (
                 if (isRedisEnabled()) {
                     const isPastDate = new Date(dateKey) < new Date(getNairobiNow().toISOString().split('T')[0]);
                     const ttl = isPastDate ? 86400 : 600; // 24h for past, 10m for future
-                    await redis.set(redisKey, fixtures, { ex: ttl });
+                    await redis?.set(redisKey, fixtures, { ex: ttl });
                 }
             } catch (err) {
                 console.error("Cache Write Error", err);
@@ -483,3 +552,27 @@ export const syncAllFixtures = async (days: number = 7, startOffset: number = 0)
     }
     console.log("[Sync Completed]");
 };
+
+export async function saveOpeningOdds(fixtureId: number, odds: { home: number, draw: number, away: number }) {
+    if (!db) return;
+    try {
+        const q = query(collection(db, "fixtures"), where("id", "==", fixtureId));
+        const snapshot = await getDocs(q);
+        if (!snapshot.empty) {
+            const docRef = snapshot.docs[0].ref;
+            const data = snapshot.docs[0].data();
+            // Only save if not already present
+            if (!data.openingOdds) {
+                await updateDoc(docRef, {
+                    openingOdds: {
+                        ...odds,
+                        timestamp: Date.now()
+                    }
+                });
+                console.log(`[Smart Money] Saved opening odds for fixture ${fixtureId}`);
+            }
+        }
+    } catch (error) {
+        console.error("Error saving opening odds:", error);
+    }
+}

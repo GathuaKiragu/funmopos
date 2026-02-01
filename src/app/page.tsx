@@ -102,17 +102,21 @@ export default function Home() {
                 </div>
 
                 <h1 className="text-5xl lg:text-7xl font-extrabold tracking-tight text-white mb-6 leading-tight">
-                  AI predicts winners with <span className="text-yellow-500">90% accuracy</span>.
+                  VIP picks achieve <span className="text-yellow-500">73% accuracy</span>.
                 </h1>
 
-                <p className="text-lg lg:text-xl text-gray-400 mb-10 leading-relaxed">
-                  Stop gambling based on feelings. Get data-driven predictions, win more often, and beat the bookies today.
+                <p className="text-lg lg:text-xl text-gray-400 mb-4 leading-relaxed">
+                  Stop gambling based on feelings. Get data-driven predictions powered by AI and beat the bookies.
+                </p>
+
+                <p className="text-sm text-gray-500 mb-10 leading-relaxed">
+                  <span className="text-yellow-500 font-semibold">VIP picks</span> are predictions with &gt;85% confidence and no risk warnings. Performance based on last 7 days of finished matches.
                 </p>
 
                 <div className="flex flex-col sm:flex-row items-center lg:justify-start justify-center gap-4 mb-16">
                   <Link href="/signup" className="w-full sm:w-auto">
                     <Button size="lg" className="h-14 px-8 bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-lg rounded-full w-full  shadow-lg shadow-yellow-500/20 transition-all hover:scale-105">
-                      Get Today's Picks
+                      View VIP Picks
                     </Button>
                   </Link>
                   <Button
@@ -134,8 +138,8 @@ export default function Home() {
                     <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">Correct Picks (Last 25)</p>
                   </div>
                   <div>
-                    <p className="text-3xl font-bold text-white">72%</p>
-                    <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">Accuracy Rate</p>
+                    <p className="text-3xl font-bold text-white">73%</p>
+                    <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">VIP Accuracy</p>
                   </div>
                   <div>
                     <p className="text-3xl font-bold text-white">10K+</p>
@@ -416,9 +420,11 @@ export default function Home() {
             <Link href="/disclaimer" className="hover:text-white">Disclaimer</Link>
             <Link href="/contact" className="hover:text-white text-yellow-500">Contact Us</Link>
           </div>
-          <p className="max-w-md mx-auto mb-4">
-            Funmo Tips is an informational platform. We do not accept bets.
-            Probabilities do not guarantee outcomes. 18+ Only.
+          <p className="max-w-2xl mx-auto mb-4 leading-relaxed">
+            <span className="font-semibold text-gray-400">Responsible Gambling:</span> Funmo Tips is an informational platform. We do not accept bets.
+            All predictions are based on statistical analysis and do not guarantee outcomes.
+            <span className="text-yellow-500 font-semibold"> VIP accuracy (73%)</span> is calculated from picks with &gt;85% confidence over the last 7 days.
+            Past performance does not guarantee future results. 18+ Only. Gamble responsibly.
           </p>
           <p>&copy; {new Date().getFullYear()} Funmo Analytics. Nairobi, Kenya.</p>
         </div>

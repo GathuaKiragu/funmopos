@@ -162,6 +162,39 @@ export interface Match {
     };
 }
 
+export interface LineupData {
+    team: {
+        id: number;
+        name: string;
+        logo: string;
+        colors?: any;
+    };
+    coach: {
+        id: number;
+        name: string;
+        photo?: string;
+    };
+    formation: string;
+    startXI: {
+        player: {
+            id: number;
+            name: string;
+            number: number;
+            pos: string;
+            grid: string | null;
+        };
+    }[];
+    substitutes: {
+        player: {
+            id: number;
+            name: string;
+            number: number;
+            pos: string;
+            grid: string | null;
+        };
+    }[];
+}
+
 // ============================================================================
 // API CLIENT
 // ============================================================================
@@ -259,7 +292,7 @@ class FootballHighlightsAPI {
         // Try cache first
         if (isRedisEnabled()) {
             try {
-                const cached = await redis.get<TeamStatistics[]>(cacheKey);
+                const cached = await redis?.get<TeamStatistics[]>(cacheKey);
                 if (cached) {
                     console.log(`[Football Highlights API] Cache hit for team stats: ${teamId}`);
                     return cached;
@@ -278,7 +311,7 @@ class FootballHighlightsAPI {
         // Cache for 24 hours (stats update after matches)
         if (data && isRedisEnabled()) {
             try {
-                await redis.set(cacheKey, data, { ex: 86400 });
+                await redis?.set(cacheKey, data, { ex: 86400 });
             } catch (err) {
                 console.error('[Football Highlights API] Redis write error:', err);
             }
@@ -297,7 +330,7 @@ class FootballHighlightsAPI {
         // Try cache first (10 min TTL for live matches)
         if (isRedisEnabled()) {
             try {
-                const cached = await redis.get<MatchDetails>(cacheKey);
+                const cached = await redis?.get<MatchDetails>(cacheKey);
                 if (cached) {
                     console.log(`[Football Highlights API] Cache hit for match details: ${matchId}`);
                     return cached;
@@ -314,7 +347,7 @@ class FootballHighlightsAPI {
         // Cache for 10 minutes
         if (data && isRedisEnabled()) {
             try {
-                await redis.set(cacheKey, data, { ex: 600 });
+                await redis?.set(cacheKey, data, { ex: 600 });
             } catch (err) {
                 console.error('[Football Highlights API] Redis write error:', err);
             }
@@ -334,7 +367,7 @@ class FootballHighlightsAPI {
         // Try cache first (1 hour TTL)
         if (isRedisEnabled()) {
             try {
-                const cached = await redis.get<StandingsData>(cacheKey);
+                const cached = await redis?.get<StandingsData>(cacheKey);
                 if (cached) {
                     console.log(`[Football Highlights API] Cache hit for standings: ${leagueId}`);
                     return cached;
@@ -353,7 +386,7 @@ class FootballHighlightsAPI {
         // Cache for 1 hour
         if (data && isRedisEnabled()) {
             try {
-                await redis.set(cacheKey, data, { ex: 3600 });
+                await redis?.set(cacheKey, data, { ex: 3600 });
             } catch (err) {
                 console.error('[Football Highlights API] Redis write error:', err);
             }
@@ -372,7 +405,7 @@ class FootballHighlightsAPI {
         // Try cache first (5 min TTL for live matches)
         if (isRedisEnabled()) {
             try {
-                const cached = await redis.get<PlayerBoxScore[]>(cacheKey);
+                const cached = await redis?.get<PlayerBoxScore[]>(cacheKey);
                 if (cached) {
                     console.log(`[Football Highlights API] Cache hit for box score: ${matchId}`);
                     return cached;
@@ -388,7 +421,7 @@ class FootballHighlightsAPI {
         // Cache for 5 minutes
         if (data && isRedisEnabled()) {
             try {
-                await redis.set(cacheKey, data, { ex: 300 });
+                await redis?.set(cacheKey, data, { ex: 300 });
             } catch (err) {
                 console.error('[Football Highlights API] Redis write error:', err);
             }
@@ -409,7 +442,7 @@ class FootballHighlightsAPI {
         const cacheTTL = oddsType === 'prematch' ? 1800 : 300;
         if (isRedisEnabled()) {
             try {
-                const cached = await redis.get<OddsData[]>(cacheKey);
+                const cached = await redis?.get<OddsData[]>(cacheKey);
                 if (cached) {
                     console.log(`[Football Highlights API] Cache hit for odds: ${matchId}`);
                     return cached;
@@ -429,7 +462,7 @@ class FootballHighlightsAPI {
         // Cache
         if (data && isRedisEnabled()) {
             try {
-                await redis.set(cacheKey, data, { ex: cacheTTL });
+                await redis?.set(cacheKey, data, { ex: cacheTTL });
             } catch (err) {
                 console.error('[Football Highlights API] Redis write error:', err);
             }
@@ -449,7 +482,7 @@ class FootballHighlightsAPI {
         // Try cache first (10 min TTL)
         if (isRedisEnabled()) {
             try {
-                const cached = await redis.get<Match[]>(cacheKey);
+                const cached = await redis?.get<Match[]>(cacheKey);
                 if (cached) {
                     console.log(`[Football Highlights API] Cache hit for matches: ${date}`);
                     return cached;
@@ -469,7 +502,43 @@ class FootballHighlightsAPI {
         // Cache for 10 minutes
         if (data && isRedisEnabled()) {
             try {
-                await redis.set(cacheKey, data, { ex: 600 });
+                await redis?.set(cacheKey, data, { ex: 600 });
+            } catch (err) {
+                console.error('[Football Highlights API] Redis write error:', err);
+            }
+        }
+
+        return data;
+    }
+
+    /**
+     * Get lineups for a match
+     * @param matchId Match ID
+     */
+    async getLineups(matchId: number): Promise<LineupData[] | null> {
+        const cacheKey = `fh:lineups:${matchId}`;
+
+        // Try cache first (15 min TTL)
+        if (isRedisEnabled()) {
+            try {
+                const cached = await redis?.get<LineupData[]>(cacheKey);
+                if (cached) {
+                    console.log(`[Football Highlights API] Cache hit for lineups: ${matchId}`);
+                    return cached;
+                }
+            } catch (err) {
+                console.error('[Football Highlights API] Redis read error:', err);
+            }
+        }
+
+        // Fetch from API
+        const response = await this.request<{ response: LineupData[] }>('/lineups', { matchId });
+        const data = response?.response || null;
+
+        // Cache for 15 minutes
+        if (data && isRedisEnabled()) {
+            try {
+                await redis?.set(cacheKey, data, { ex: 900 });
             } catch (err) {
                 console.error('[Football Highlights API] Redis write error:', err);
             }
@@ -491,3 +560,86 @@ class FootballHighlightsAPI {
 
 // Export singleton instance
 export const footballHighlightsAPI = new FootballHighlightsAPI();
+
+/**
+ * Get head-to-head matches between two teams
+ * @param team1Id First team ID
+ * @param team2Id Second team ID
+ * @param limit Maximum number of matches to return (default: 10)
+ * @returns Array of historical matches between the two teams
+ */
+export async function getH2HMatches(
+    team1Id: number,
+    team2Id: number,
+    limit: number = 10
+): Promise<Match[]> {
+    const cacheKey = `h2h:${Math.min(team1Id, team2Id)}-${Math.max(team1Id, team2Id)}:${limit}`;
+
+    // Try cache first (24 hour TTL for H2H data)
+    if (isRedisEnabled()) {
+        try {
+            const cached = await redis?.get<Match[]>(cacheKey);
+            if (cached) {
+                console.log(`[H2H] Cache hit for teams ${team1Id} vs ${team2Id}`);
+                return cached;
+            }
+        } catch (err) {
+            console.error('[H2H] Redis read error:', err);
+        }
+    }
+
+    console.log(`[H2H] Fetching historical matches for teams ${team1Id} vs ${team2Id}`);
+
+    // Fetch matches from the last year
+    const matches: Match[] = [];
+    const today = new Date();
+
+    // Strategy: Check recent matches first (more likely to find H2H)
+    // Go back 1 year, checking key dates (weekends, mid-week)
+    const daysToCheck = 365; // 1 year back
+    const checkInterval = 7; // Check every week
+
+    for (let i = 0; i < daysToCheck && matches.length < limit; i += checkInterval) {
+        const checkDate = new Date(today);
+        checkDate.setDate(today.getDate() - i);
+        const dateStr = checkDate.toISOString().split('T')[0];
+
+        try {
+            const dayMatches = await footballHighlightsAPI.getMatches(dateStr);
+
+            if (dayMatches) {
+                // Filter for matches between these two teams
+                const h2hMatches = dayMatches.filter(match =>
+                    (match.homeTeam.id === team1Id && match.awayTeam.id === team2Id) ||
+                    (match.homeTeam.id === team2Id && match.awayTeam.id === team1Id)
+                );
+
+                matches.push(...h2hMatches);
+            }
+        } catch (error) {
+            // Silently continue on errors (date might not have data)
+        }
+
+        // Small delay every 10 requests to avoid rate limiting
+        if (i % (checkInterval * 10) === 0 && i > 0) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+    }
+
+    // Sort by date (most recent first) and limit
+    const sortedMatches = matches
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, limit);
+
+    // Cache for 24 hours
+    if (sortedMatches.length > 0 && isRedisEnabled()) {
+        try {
+            await redis?.set(cacheKey, sortedMatches, { ex: 86400 });
+        } catch (err) {
+            console.error('[H2H] Redis write error:', err);
+        }
+    }
+
+    console.log(`[H2H] Found ${sortedMatches.length} historical matches`);
+    return sortedMatches;
+}

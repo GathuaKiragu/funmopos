@@ -14,6 +14,8 @@ import { calculateStake } from "@/lib/bankroll";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import Link from "next/link";
+import { getResult } from "@/lib/utils";
+import { PerformanceModal } from "@/components/performance-modal";
 
 // --- Types ---
 type FixtureGroup = {
@@ -24,32 +26,7 @@ type FixtureGroup = {
 };
 
 // --- Helpers ---
-const getResult = (prediction: any, fixture: Fixture): 'WON' | 'LOST' | 'VOID' | null => {
-    if (!prediction || !fixture.goals || fixture.goals.home === null || fixture.goals.away === null) return null;
-    const h = fixture.goals.home;
-    const a = fixture.goals.away;
-    const total = h + a;
-    const p = prediction.picked.toLowerCase();
-    const type = prediction.type;
 
-    if (type === "result") {
-        if (p.includes("home") || p.includes("1") || p.includes(fixture.homeTeam.name.toLowerCase())) return h > a ? 'WON' : 'LOST';
-        if (p.includes("away") || p.includes("2") || p.includes(fixture.awayTeam.name.toLowerCase())) return a > h ? 'WON' : 'LOST';
-        if (p.includes("draw") || p.includes("x")) return h === a ? 'WON' : 'LOST';
-    }
-    if (p.includes("over") || p.includes("under")) {
-        const match = p.match(/(over|under)\s+(\d+\.\d+|\d+)/);
-        if (match) {
-            const threshold = parseFloat(match[2]);
-            return (p.includes("over") ? total > threshold : total < threshold) ? 'WON' : 'LOST';
-        }
-    }
-    if (p.includes("btts")) return (h > 0 && a > 0) === (!p.includes("no")) ? 'WON' : 'LOST';
-    if (p.includes("1x")) return h >= a ? 'WON' : 'LOST';
-    if (p.includes("x2")) return a >= h ? 'WON' : 'LOST';
-    if (p.includes("12")) return h !== a ? 'WON' : 'LOST';
-    return null;
-};
 
 export default function DashboardPage() {
     const { user, loading: authLoading } = useAuth();
@@ -72,12 +49,48 @@ export default function DashboardPage() {
     // Scroll ref for date picker
     const dateScrollRef = useRef<HTMLDivElement>(null);
 
+    // VIP Performance (7-day rolling window)
+    const [vipWinRate, setVipWinRate] = useState<number>(0);
+    const [loadingVipStats, setLoadingVipStats] = useState(true);
+
     useEffect(() => {
         if (!authLoading && !user) router.push("/login");
         if (user) {
             getDoc(doc(db, "users", user.uid)).then(snap => snap.exists() && setBankroll(snap.data().bankroll || 0));
+
+            // Load 7-day VIP performance
+            loadVipPerformance();
         }
     }, [user, authLoading, router]);
+
+    const loadVipPerformance = async () => {
+        setLoadingVipStats(true);
+        try {
+            const response = await fetch('/api/performance?days=7');
+            const data = await response.json();
+            const fixtures = data.fixtures || [];
+
+            // Filter for VIP picks only (>85% confidence, not risky, finished)
+            const vipPicks = fixtures.filter((f: Fixture) => {
+                const isFinished = ['FT', 'AET', 'PEN'].includes(f.status.short);
+                const confidence = f.prediction?.confidence || 0;
+                const isRisky = f.prediction?.isRisky || false;
+                return isFinished && confidence > 85 && !isRisky && getResult(f.prediction, f) !== null;
+            });
+
+            if (vipPicks.length === 0) {
+                setVipWinRate(0);
+            } else {
+                const wins = vipPicks.filter((f: Fixture) => getResult(f.prediction, f) === 'WON').length;
+                setVipWinRate(Math.round((wins / vipPicks.length) * 100));
+            }
+        } catch (error) {
+            console.error('Failed to load VIP performance:', error);
+            setVipWinRate(0);
+        } finally {
+            setLoadingVipStats(false);
+        }
+    };
 
     const loadData = async (force: boolean = false) => {
         if (force) setRefreshing(true);
@@ -101,9 +114,16 @@ export default function DashboardPage() {
     const getFilteredFixtures = () => {
         return fixtures.filter(f => {
             const isFinished = ['FT', 'AET', 'PEN'].includes(f.status.short);
+            const confidence = f.prediction?.confidence || 0;
+            const isRisky = f.prediction?.isRisky || false;
 
             // Tab Filter (History vs Latest)
-            if (activeTab === 'HISTORY' && !isFinished) return false;
+            if (activeTab === 'HISTORY') {
+                // History: Only show VIP picks (>85% confidence, NOT risky)
+                if (!isFinished) return false;
+                if (confidence <= 85) return false;
+                if (isRisky) return false;
+            }
             if (activeTab === 'LATEST' && isFinished) return false;
 
             // League Filter
@@ -112,13 +132,20 @@ export default function DashboardPage() {
             // Mode Filter
             const isLive = ['1H', 'HT', '2H', 'ET', 'P', 'LIVE'].includes(f.status.short);
             if (filterMode === 'LIVE') return isLive;
-            if (filterMode === 'WATCH') return (f.prediction?.confidence || 0) > 70;
+            if (filterMode === 'WATCH') return confidence > 70;
             return true;
         });
     };
 
     const uniqueLeagues = Array.from(new Set(fixtures
-        .filter(f => activeTab === 'HISTORY' ? ['FT', 'AET', 'PEN'].includes(f.status.short) : !['FT', 'AET', 'PEN'].includes(f.status.short))
+        .filter(f => {
+            const isFinished = ['FT', 'AET', 'PEN'].includes(f.status.short);
+            if (activeTab === 'HISTORY') {
+                // Only show leagues with VIP picks (>85% confidence, non-risky)
+                return isFinished && (f.prediction?.confidence || 0) > 85 && !f.prediction?.isRisky;
+            }
+            return !isFinished;
+        })
         .map(f => f.league.name)
     )).sort();
 
@@ -201,6 +228,7 @@ export default function DashboardPage() {
         else if (tier === "basic" && isValid && confidence < 75) isLocked = false;
 
         if (!hasPrediction) isLocked = false;
+        if (isFinished) isLocked = false; // Always show history for transparency
 
         const badgeColor = isRisky ? 'text-amber-500 border-amber-500/30 bg-amber-500/10' :
             confidence > 85 ? 'text-yellow-400 border-yellow-400/30 bg-yellow-400/10' :
@@ -208,6 +236,13 @@ export default function DashboardPage() {
                     'text-white/40 border-white/10 bg-white/5';
 
         const formattedTime = format(new Date(date), "HH:mm");
+
+        // Smart Stake Calculation
+        const oddVal = (prediction?.type === 'result' && fixture.openingOdds) ?
+            (prediction.picked.toLowerCase().includes('home') ? fixture.openingOdds.home :
+                prediction.picked.toLowerCase().includes('away') ? fixture.openingOdds.away : 1.85) : 1.85;
+
+        const { amount: stakeAmount } = calculateStake(bankroll, confidence, oddVal);
 
         return (
             <div
@@ -276,14 +311,35 @@ export default function DashboardPage() {
                                         </div>
                                     ) : (
                                         <>
+                                            <div className="absolute -top-3 right-0 bg-black/60 backdrop-blur px-2 py-0.5 rounded text-[8px] text-gray-400 border border-white/5 font-mono">
+                                                Risk: {stakeAmount > 0 && !isFinished ? <span className="text-emerald-500 font-bold">Ksh {stakeAmount}</span> : "N/A"}
+                                            </div>
                                             <div className={`w-full py-2 rounded-xl text-center text-[10px] font-black uppercase tracking-tight shadow-inner ${badgeColor}`}>
                                                 {prediction.picked}
                                             </div>
-                                            <div className="mt-2 flex items-center gap-1.5">
-                                                <span className="text-[10px] font-black text-white/40 uppercase tracking-tighter italic">{confidence}% Sure</span>
-                                                {result && (
-                                                    <div className={`px-1.5 py-0.5 rounded text-[8px] font-black ${result === 'WON' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
-                                                        {result}
+                                            <div className="mt-2 flex items-center justify-between w-full px-1">
+                                                {/* Odds / Confidence */}
+                                                <div className="flex flex-col items-start leading-none">
+                                                    <span className="text-[9px] font-bold text-gray-500 uppercase">Odds</span>
+                                                    <span className="text-[10px] font-mono font-bold text-white">
+                                                        {prediction.type === 'result' && fixture.openingOdds ? (
+                                                            prediction.picked.toLowerCase().includes('home') ? fixture.openingOdds.home.toFixed(2) :
+                                                                prediction.picked.toLowerCase().includes('away') ? fixture.openingOdds.away.toFixed(2) :
+                                                                    prediction.picked.toLowerCase().includes('draw') ? fixture.openingOdds.draw.toFixed(2) :
+                                                                        "1.85" // Fallback avg for Goals/BTTS where we lack data
+                                                        ) : "1.80"}
+                                                    </span>
+                                                </div>
+
+                                                {/* Result Badge */}
+                                                {result ? (
+                                                    <div className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${result === 'WON' ? 'bg-emerald-500 text-black shadow-[0_0_10px_rgba(16,185,129,0.4)]' : 'bg-red-500/10 text-red-500 border border-red-500/20'}`}>
+                                                        {result === 'WON' ? 'WON' : 'LOST'}
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex flex-col items-end leading-none">
+                                                        <span className="text-[9px] font-bold text-gray-500 uppercase">Conf</span>
+                                                        <span className={`text-[10px] font-black ${confidence > 85 ? 'text-emerald-500' : 'text-yellow-500'}`}>{confidence}%</span>
                                                     </div>
                                                 )}
                                             </div>
@@ -349,19 +405,22 @@ export default function DashboardPage() {
     // Calculate Past Performance (Last 3 days for now as quick stats)
     const activeFixturesCount = fixtures.filter(f => !['FT', 'AET', 'PEN'].includes(f.status.short)).length;
 
-    const calculateWinRate = () => {
-        const finishedWithResult = fixtures.filter(f => {
-            const isFinished = ['FT', 'AET', 'PEN'].includes(f.status.short);
-            return isFinished && getResult(f.prediction, f) !== null;
-        });
+    // Filter finished fixtures for stats: VIP picks only (>85% confidence, NOT risky)
+    const finishedFixtures = fixtures.filter(f => {
+        const isFinished = ['FT', 'AET', 'PEN'].includes(f.status.short);
+        const confidence = f.prediction?.confidence || 0;
+        const isRisky = f.prediction?.isRisky || false;
+        return isFinished && confidence > 85 && !isRisky;
+    });
 
-        if (finishedWithResult.length === 0) return 95; // Default high potential for new sessions
+    // Calculate stats for current view (only quality picks)
+    const statsTotal = finishedFixtures.length;
+    const statsWon = finishedFixtures.filter(f => getResult(f.prediction, f) === 'WON').length;
+    const statsLost = finishedFixtures.filter(f => getResult(f.prediction, f) === 'LOST').length;
 
-        const wins = finishedWithResult.filter(f => getResult(f.prediction, f) === 'WON').length;
-        return Math.round((wins / finishedWithResult.length) * 100);
-    };
-
-    const winRate = calculateWinRate();
+    // Note: VIP win rate is now loaded from 7-day performance data via loadVipPerformance()
+    // This provides a more stable and accurate metric than single-day calculations
+    const isHistoryView = activeTab === 'HISTORY' || differenceInCalendarDays(selectedDate, new Date()) < 0;
 
     return (
         <div className="min-h-screen bg-black text-white p-4 pb-20 md:p-8">
@@ -399,24 +458,73 @@ export default function DashboardPage() {
                     </div>
                 )}
 
-                {/* 1. Stats Header (New Request: Show Performance %) */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-white/5 rounded-2xl border border-white/10">
-                    <div>
-                        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Today's Picks</p>
-                        <p className="text-2xl font-black text-white">{fixtures.length}</p>
+                {/* History Filter Info Banner */}
+                {activeTab === 'HISTORY' && (
+                    <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl px-6 py-4 flex items-center gap-4">
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center shrink-0">
+                                <CheckCircle size={16} className="text-emerald-500" />
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black uppercase text-emerald-500 tracking-widest">VIP Performance Tracker</p>
+                                <p className="text-[10px] text-emerald-500/80 leading-relaxed">
+                                    Showing only our <span className="font-bold text-emerald-400">VIP picks</span> (over 85% confidence, non-risky). This reflects our highest-tier accuracy.
+                                </p>
+                            </div>
+                        </div>
                     </div>
-                    <div>
-                        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Win Rate (Avg)</p>
-                        <p className="text-2xl font-black text-emerald-500">{winRate}%</p>
-                    </div>
-                    <div>
-                        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Active</p>
-                        <p className="text-2xl font-black text-yellow-500 animate-pulse">{activeFixturesCount}</p>
-                    </div>
-                    <div>
-                        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Bankroll</p>
-                        <p className="text-2xl font-black text-white">Ksh {bankroll}</p>
-                    </div>
+                )}
+
+                {/* 1. Stats Header (Dynamic based on View) */}
+                <div className={`grid ${isHistoryView ? 'grid-cols-4' : 'grid-cols-2 md:grid-cols-4'} gap-4 p-4 bg-white/5 rounded-2xl border border-white/10`}>
+                    {isHistoryView ? (
+                        <>
+                            <div className="text-center md:text-left">
+                                <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Games</p>
+                                <p className="text-xl md:text-2xl font-black text-white">{statsTotal}</p>
+                            </div>
+                            <div className="text-center md:text-left">
+                                <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Won</p>
+                                <p className="text-xl md:text-2xl font-black text-emerald-500">{statsWon}</p>
+                            </div>
+                            <div className="text-center md:text-left">
+                                <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Lost</p>
+                                <p className="text-xl md:text-2xl font-black text-red-500">{statsLost}</p>
+                            </div>
+                            <div className="text-center md:text-left">
+                                <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Win Rate</p>
+                                <p className="text-xl md:text-2xl font-black text-yellow-500">{vipWinRate}%</p>
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <div>
+                                <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Today's Picks</p>
+                                <p className="text-2xl font-black text-white">{fixtures.length}</p>
+                            </div>
+                            <PerformanceModal trigger={
+                                <div className="cursor-pointer hover:bg-white/5 p-2 -m-2 rounded-lg transition-colors group">
+                                    <div className="flex items-center gap-1">
+                                        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold group-hover:text-white transition-colors">VIP Accuracy (7d)</p>
+                                        <ChevronRight className="w-3 h-3 text-white/20 group-hover:text-yellow-500 transition-colors" />
+                                    </div>
+                                    {loadingVipStats ? (
+                                        <Activity className="w-4 h-4 animate-spin text-yellow-500 mt-1" />
+                                    ) : (
+                                        <p className="text-2xl font-black text-emerald-500">{vipWinRate}%</p>
+                                    )}
+                                </div>
+                            } />
+                            <div>
+                                <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Active</p>
+                                <p className="text-2xl font-black text-yellow-500 animate-pulse">{activeFixturesCount}</p>
+                            </div>
+                            <div>
+                                <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Bankroll</p>
+                                <p className="text-2xl font-black text-white">Ksh {bankroll}</p>
+                            </div>
+                        </>
+                    )}
                 </div>
 
                 {/* 2. Header & Filters (Like Screenshot) */}
@@ -508,6 +616,40 @@ export default function DashboardPage() {
                     </div>
                 ) : groupedFixtures.length > 0 ? (
                     <div className="space-y-8">
+                        {/* Daily Summary Banner (Only in History) */}
+                        {activeTab === 'HISTORY' && (
+                            (() => {
+                                const allDayFixtures = groupedFixtures.flatMap(g => g.fixtures);
+                                const finished = allDayFixtures.filter(f => ['FT', 'AET', 'PEN'].includes(f.status.short));
+                                const vipFinished = finished.filter(f => (f.prediction?.confidence || 0) > 85 && !f.prediction?.isRisky);
+
+                                if (vipFinished.length === 0) return null;
+
+                                const wins = vipFinished.filter(f => getResult(f.prediction, f) === 'WON').length;
+                                const losses = vipFinished.filter(f => getResult(f.prediction, f) === 'LOST').length;
+                                // Basic Profit Calc: (Wins * 0.8) - (Losses * 1.0) - Assuming flat stakes and 1.80 odds avg
+                                const profitUnits = (wins * 0.8) - (losses * 1.0);
+                                const isProfitable = profitUnits >= 0;
+
+                                return (
+                                    <div className={`rounded-xl p-4 border ${profitUnits > 0 ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-white/5 border-white/10'} mb-6`}>
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Daily VIP Performance</p>
+                                                <h3 className={`text-xl font-black ${profitUnits > 0 ? 'text-emerald-500' : 'text-white'}`}>
+                                                    {profitUnits > 0 ? `+${profitUnits.toFixed(1)} Units Profit` : profitUnits === 0 ? "Break Even" : `${profitUnits.toFixed(1)} Units`}
+                                                </h3>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-2xl font-black text-white">{wins}/{vipFinished.length}</p>
+                                                <p className="text-[10px] font-bold text-gray-500 uppercase">Correct Picks</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })()
+                        )}
+
                         {groupedFixtures.map(group => (
                             <section key={group.league} className="animate-in fade-in slide-in-from-bottom-2 duration-500">
                                 {/* League Header */}
@@ -533,13 +675,28 @@ export default function DashboardPage() {
                         {/* Off-season detection */}
                         {fixtures.length === 0 && !loadingFixtures && (
                             <div className="max-w-md mx-auto mt-4 space-y-3">
-                                <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-4">
-                                    <p className="text-xs text-yellow-500/80 leading-relaxed">
-                                        <strong className="font-black uppercase tracking-wide">Off-Season Period</strong>
-                                        <br />
-                                        Most major leagues are currently inactive. European leagues typically run August-May.
-                                    </p>
-                                </div>
+                                {activeTab === 'HISTORY' ? (
+                                    <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+                                        <p className="text-sm text-gray-300 mb-4">
+                                            No finished matches found for <span className="text-yellow-500 font-bold">{isToday(selectedDate) ? "Today" : format(selectedDate, "MMMM do")}</span>.
+                                        </p>
+                                        <Button
+                                            onClick={() => setSelectedDate(subDays(new Date(), 1))}
+                                            variant="outline"
+                                            className="border-yellow-500 text-yellow-500 hover:bg-yellow-500/10 uppercase text-xs font-bold tracking-widest"
+                                        >
+                                            View Yesterday's Results
+                                        </Button>
+                                    </div>
+                                ) : (
+                                    <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-4">
+                                        <p className="text-xs text-yellow-500/80 leading-relaxed">
+                                            <strong className="font-black uppercase tracking-wide">Off-Season Period</strong>
+                                            <br />
+                                            Most major leagues are currently inactive. European leagues typically run August-May.
+                                        </p>
+                                    </div>
+                                )}
 
                                 <div className="text-left bg-white/5 rounded-xl p-4 border border-white/10">
                                     <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-2">What to try:</p>
