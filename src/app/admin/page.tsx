@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2, Lock, Users, Database, Activity, TrendingUp, RefreshCw, LogOut, AlertCircle, CheckCircle, Eye, MessageSquare, Clock, History } from "lucide-react";
 import { useRouter } from "next/navigation";
 import BulkSMSPanel from "@/components/admin/bulk-sms-panel";
+import UserManagementPanel from "@/components/admin/user-management-panel";
 
 interface Stats {
     users: { total: number; verified: number; unverified: number };
@@ -398,6 +399,9 @@ export default function AdminPage() {
                         </div>
                     </div>
                 </div>
+
+                {/* User Management */}
+                <UserManagementPanel />
 
                 {/* Activity Feed */}
                 {analytics?.recentActivity && analytics.recentActivity.length > 0 && (

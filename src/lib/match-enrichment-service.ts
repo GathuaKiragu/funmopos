@@ -119,14 +119,15 @@ function extractOdds(oddsData: OddsData[] | null): EnrichedData['odds'] {
  */
 async function calculateH2HRecord(
     homeTeamId: number,
-    awayTeamId: number
+    awayTeamId: number,
+    forceRefresh: boolean = false
 ): Promise<EnrichedData['h2hRecord'] | null> {
     try {
         // Import the H2H function
         const { getH2HMatches } = await import('./football-highlights-api');
 
         // Fetch last 10 H2H matches
-        const h2hMatches = await getH2HMatches(homeTeamId, awayTeamId, 10);
+        const h2hMatches = await getH2HMatches(homeTeamId, awayTeamId, 10, forceRefresh);
 
         if (!h2hMatches || h2hMatches.length === 0) {
             console.log(`[H2H] No historical matches found between teams ${homeTeamId} and ${awayTeamId}`);
@@ -200,7 +201,7 @@ async function calculateH2HRecord(
  * @param fixture The fixture to enrich
  * @returns Enriched fixture with additional data
  */
-export async function enrichFixture(fixture: Fixture): Promise<EnrichedFixture> {
+export async function enrichFixture(fixture: Fixture, forceRefresh: boolean = false): Promise<EnrichedFixture> {
     console.log(`[Match Enrichment] Enriching fixture ${fixture.id}: ${fixture.homeTeam.name} vs ${fixture.awayTeam.name}`);
 
     // Prepare date for API calls (30 days back for stats)
@@ -209,7 +210,7 @@ export async function enrichFixture(fixture: Fixture): Promise<EnrichedFixture> 
     try {
         // Step 0: Resolve Football Highlights API Match ID
         const dateKey = fixture.date.split('T')[0];
-        const fhMatches = await footballHighlightsAPI.getMatches(dateKey);
+        const fhMatches = await footballHighlightsAPI.getMatches(dateKey, undefined, forceRefresh);
 
         let fhMatchId = null;
         let fhHomeTeamId = null;
@@ -245,21 +246,21 @@ export async function enrichFixture(fixture: Fixture): Promise<EnrichedFixture> 
             rawLineups
         ] = await Promise.all([
             // Team statistics using Highlightly IDs
-            footballHighlightsAPI.getTeamStatistics(fhHomeTeamId, fromDate),
-            footballHighlightsAPI.getTeamStatistics(fhAwayTeamId, fromDate),
+            footballHighlightsAPI.getTeamStatistics(fhHomeTeamId, fromDate, 'Etc/UTC', forceRefresh),
+            footballHighlightsAPI.getTeamStatistics(fhAwayTeamId, fromDate, 'Etc/UTC', forceRefresh),
 
             // Match details
-            footballHighlightsAPI.getMatchDetails(fhMatchId),
+            footballHighlightsAPI.getMatchDetails(fhMatchId, forceRefresh),
 
             // Player box scores 
-            footballHighlightsAPI.getPlayerBoxScore(fhMatchId),
+            footballHighlightsAPI.getPlayerBoxScore(fhMatchId, forceRefresh),
 
             // Odds
-            footballHighlightsAPI.getOdds(fhMatchId, 'prematch'),
+            footballHighlightsAPI.getOdds(fhMatchId, 'prematch', forceRefresh),
 
             // Lineups (1 hour window)
             (new Date(fixture.date).getTime() - new Date().getTime()) < 3600000
-                ? footballHighlightsAPI.getLineups(fhMatchId)
+                ? footballHighlightsAPI.getLineups(fhMatchId, forceRefresh)
                 : Promise.resolve(null),
         ]);
 
@@ -322,7 +323,7 @@ export async function enrichFixture(fixture: Fixture): Promise<EnrichedFixture> 
                 away: rawLineups[1],
                 confirmed: true
             } : undefined,
-            h2hRecord: (await calculateH2HRecord(fhHomeTeamId, fhAwayTeamId)) || undefined,
+            h2hRecord: (await calculateH2HRecord(fhHomeTeamId, fhAwayTeamId, forceRefresh)) || undefined,
         };
 
         console.log(`[Match Enrichment] Successfully enriched fixture ${fixture.id}`);
@@ -346,7 +347,8 @@ export async function enrichFixture(fixture: Fixture): Promise<EnrichedFixture> 
  */
 export async function enrichFixtures(
     fixtures: Fixture[],
-    maxConcurrent: number = 5
+    maxConcurrent: number = 5,
+    forceRefresh: boolean = false
 ): Promise<EnrichedFixture[]> {
     console.log(`[Match Enrichment] Enriching ${fixtures.length} fixtures with max concurrency ${maxConcurrent}`);
 
@@ -358,7 +360,7 @@ export async function enrichFixtures(
         console.log(`[Match Enrichment] Processing batch ${Math.floor(i / maxConcurrent) + 1}/${Math.ceil(fixtures.length / maxConcurrent)}`);
 
         const enrichedBatch = await Promise.all(
-            batch.map(fixture => enrichFixture(fixture))
+            batch.map(fixture => enrichFixture(fixture, forceRefresh))
         );
 
         results.push(...enrichedBatch);

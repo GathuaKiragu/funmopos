@@ -33,6 +33,19 @@ export async function GET() {
             stats.fixtures.total = fixturesSnapshot.size;
             stats.fixtures.cached = fixturesSnapshot.size;
 
+            // Count users (real count)
+            const usersRef = collection(db, 'users');
+            const usersSnapshot = await getDocs(usersRef);
+            stats.users.total = usersSnapshot.size;
+
+            // Calculate active users (last 24h)
+            const oneDayAgo = new Date();
+            oneDayAgo.setHours(oneDayAgo.getHours() - 24);
+            // We can approximate this by checking lastLoginAt if available in the snapshot
+            // For verified/unverified, we assume all users with phone numbers are "verified" in this OTP system
+            stats.users.verified = usersSnapshot.docs.filter(doc => doc.data().lastLoginAt?.toDate() > oneDayAgo).length; // Using "Verified" field to show Active Users for now as per user request context
+            stats.users.unverified = stats.users.total - stats.users.verified; // Inactive
+
             // Get recent transactions
             const transactionsRef = collection(db, 'transactions');
             const recentTxQuery = query(

@@ -10,9 +10,9 @@ export async function POST(request: Request) {
     try {
         // 1. Check admin authentication
         const cookieStore = await cookies();
-        const adminAuth = cookieStore.get('admin-auth');
+        const adminSession = cookieStore.get('admin_session');
 
-        if (!adminAuth || adminAuth.value !== 'true') {
+        if (!adminSession || !adminSession.value) {
             return NextResponse.json(
                 { error: 'Unauthorized. Admin access required.' },
                 { status: 401 }

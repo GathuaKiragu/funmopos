@@ -1,8 +1,9 @@
 import axios from 'axios';
 
 // SasaSignal API Configuration
-const SASASIGNAL_API_URL = 'https://api.sasasignal.com/v1/sms';
-const SASASIGNAL_API_KEY = process.env.SASASIGNAL_API_KEY || '';
+const SASASIGNAL_API_URL = 'https://sasasignal.com/api/v1/sms';
+const SASASIGNAL_EMAIL = process.env.SASASIGNAL_EMAIL || '';
+const SASASIGNAL_PASSWORD = process.env.SASASIGNAL_PASSWORD || '';
 const SASASIGNAL_SENDER_ID = process.env.SASASIGNAL_SENDER_ID || 'FUNMO';
 
 // Cost per SMS in KES (approximate)
@@ -12,6 +13,36 @@ interface SMSResponse {
     success: boolean;
     messageId?: string;
     error?: string;
+}
+
+let cachedToken: string | null = null;
+let tokenExpiry: number | null = null;
+
+async function getSasaSignalToken(): Promise<string> {
+    if (cachedToken && tokenExpiry && Date.now() < (tokenExpiry - 60000)) {
+        return cachedToken;
+    }
+
+    try {
+        if (!SASASIGNAL_EMAIL || !SASASIGNAL_PASSWORD) {
+            throw new Error("Missing Sasa Signal Credentials");
+        }
+
+        const response = await axios.post(`${SASASIGNAL_API_URL.replace('/sms', '')}/authenticate`, {
+            email: SASASIGNAL_EMAIL,
+            password: SASASIGNAL_PASSWORD
+        });
+
+        const token = response.data.token || response.data.access_token;
+        if (!token) throw new Error("No token returned");
+
+        cachedToken = token;
+        tokenExpiry = Date.now() + (50 * 60 * 1000); // 50 mins expiry
+        return token;
+    } catch (error: any) {
+        console.error("Auth Token Error:", error.message);
+        throw error;
+    }
 }
 
 interface BulkSMSResult {
@@ -69,32 +100,41 @@ export async function sendSingleSMS(
     message: string
 ): Promise<SMSResponse> {
     try {
-        if (!SASASIGNAL_API_KEY) {
-            throw new Error('SasaSignal API key not configured');
+        if (!SASASIGNAL_EMAIL || !SASASIGNAL_PASSWORD) {
+            throw new Error('SasaSignal Email/Password not configured');
         }
 
         const formattedPhone = formatPhoneNumber(phoneNumber);
 
+        const token = await getSasaSignalToken();
+
+        // Use Transactional SMS Endpoint with Bearer Token & FormData
+        // SasaSignal requires multipart/form-data
+        const formData = new FormData();
+        formData.append('sender_id', SASASIGNAL_SENDER_ID);
+        formData.append('message', message);
+        formData.append('recipient', formattedPhone); // "recipient" not "phone" or "to"
+        formData.append('callback_url', 'https://funmotips.com/api/sms/callback'); // Fallback URL
+        formData.append('scheduled_send_unix', ''); // Required empty string field
+
         const response = await axios.post(
-            SASASIGNAL_API_URL,
-            {
-                to: formattedPhone,
-                message: message,
-                sender_id: SASASIGNAL_SENDER_ID,
-            },
+            `${SASASIGNAL_API_URL}/transactional/send`,
+            formData,
             {
                 headers: {
-                    'Authorization': `Bearer ${SASASIGNAL_API_KEY}`,
-                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                    // axios/FormData will set Content-Type to multipart/form-data with boundary automatically
+                    // 'Content-Type': 'multipart/form-data', 
+                    'Idempotency-Key': `sms-${Date.now()}-${phoneNumber}`
                 },
-                timeout: 10000, // 10 second timeout
+                timeout: 10000,
             }
         );
 
-        if (response.data.status === 'success' || response.data.success) {
+        if (response.data.status === 'success' || response.data['transactional-sms-id'] || response.data.success) {
             return {
                 success: true,
-                messageId: response.data.message_id || response.data.id,
+                messageId: response.data['transactional-sms-id'] || response.data.message_id || 'sent',
             };
         } else {
             return {

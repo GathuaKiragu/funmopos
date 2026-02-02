@@ -67,7 +67,13 @@ export async function POST(request: Request) {
                     displayName: userRecord.displayName || "User",
                     tier: 'pro',
                     subscriptionExpiry: admin.firestore.Timestamp.fromDate(trialExpiry),
-                    bankroll: 0
+                    bankroll: 0,
+                    lastLoginAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+            } else {
+                // Update existing user login time
+                await userDocRef.update({
+                    lastLoginAt: admin.firestore.FieldValue.serverTimestamp()
                 });
             }
         } catch (error: any) {
@@ -90,7 +96,8 @@ export async function POST(request: Request) {
                     displayName: name || "User",
                     tier: 'pro', // Give Pro access
                     subscriptionExpiry: admin.firestore.Timestamp.fromDate(trialExpiry),
-                    bankroll: 0
+                    bankroll: 0,
+                    lastLoginAt: admin.firestore.FieldValue.serverTimestamp()
                 });
             } else {
                 throw error;

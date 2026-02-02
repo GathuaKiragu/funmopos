@@ -286,11 +286,11 @@ class FootballHighlightsAPI {
      * @param fromDate Date in YYYY-MM-DD format
      * @param timezone Optional timezone (default: Etc/UTC)
      */
-    async getTeamStatistics(teamId: number, fromDate: string, timezone: string = 'Etc/UTC'): Promise<TeamStatistics[] | null> {
+    async getTeamStatistics(teamId: number, fromDate: string, timezone: string = 'Etc/UTC', forceRefresh: boolean = false): Promise<TeamStatistics[] | null> {
         const cacheKey = `fh:team-stats:${teamId}:${fromDate}`;
 
         // Try cache first
-        if (redis) {
+        if (!forceRefresh && redis) {
             try {
                 const cached = await redis?.get<TeamStatistics[]>(cacheKey);
                 if (cached) {
@@ -324,11 +324,11 @@ class FootballHighlightsAPI {
      * Get detailed match information
      * @param matchId Match ID
      */
-    async getMatchDetails(matchId: number): Promise<MatchDetails | null> {
+    async getMatchDetails(matchId: number, forceRefresh: boolean = false): Promise<MatchDetails | null> {
         const cacheKey = `fh:match-details:${matchId}`;
 
         // Try cache first (10 min TTL for live matches)
-        if (redis) {
+        if (!forceRefresh && redis) {
             try {
                 const cached = await redis?.get<MatchDetails>(cacheKey);
                 if (cached) {
@@ -361,11 +361,11 @@ class FootballHighlightsAPI {
      * @param leagueId League ID
      * @param season Season year (e.g., 2024)
      */
-    async getStandings(leagueId: number, season: number): Promise<StandingsData | null> {
+    async getStandings(leagueId: number, season: number, forceRefresh: boolean = false): Promise<StandingsData | null> {
         const cacheKey = `fh:standings:${leagueId}:${season}`;
 
         // Try cache first (1 hour TTL)
-        if (redis) {
+        if (!forceRefresh && redis) {
             try {
                 const cached = await redis?.get<StandingsData>(cacheKey);
                 if (cached) {
@@ -399,11 +399,11 @@ class FootballHighlightsAPI {
      * Get player box scores for a match (includes xG metrics)
      * @param matchId Match ID
      */
-    async getPlayerBoxScore(matchId: number): Promise<PlayerBoxScore[] | null> {
+    async getPlayerBoxScore(matchId: number, forceRefresh: boolean = false): Promise<PlayerBoxScore[] | null> {
         const cacheKey = `fh:box-score:${matchId}`;
 
         // Try cache first (5 min TTL for live matches)
-        if (redis) {
+        if (!forceRefresh && redis) {
             try {
                 const cached = await redis?.get<PlayerBoxScore[]>(cacheKey);
                 if (cached) {
@@ -435,12 +435,12 @@ class FootballHighlightsAPI {
      * @param matchId Match ID
      * @param oddsType 'prematch' or 'live'
      */
-    async getOdds(matchId: number, oddsType: 'prematch' | 'live' = 'prematch'): Promise<OddsData[] | null> {
+    async getOdds(matchId: number, oddsType: 'prematch' | 'live' = 'prematch', forceRefresh: boolean = false): Promise<OddsData[] | null> {
         const cacheKey = `fh:odds:${matchId}:${oddsType}`;
 
         // Try cache first (30 min for prematch, 5 min for live)
         const cacheTTL = oddsType === 'prematch' ? 1800 : 300;
-        if (redis) {
+        if (!forceRefresh && redis) {
             try {
                 const cached = await redis?.get<OddsData[]>(cacheKey);
                 if (cached) {
@@ -476,11 +476,11 @@ class FootballHighlightsAPI {
      * @param date Date in YYYY-MM-DD format
      * @param leagueId Optional league filter
      */
-    async getMatches(date: string, leagueId?: number): Promise<Match[] | null> {
+    async getMatches(date: string, leagueId?: number, forceRefresh: boolean = false): Promise<Match[] | null> {
         const cacheKey = `fh:matches:${date}:${leagueId || 'all'}`;
 
         // Try cache first (10 min TTL)
-        if (redis) {
+        if (!forceRefresh && redis) {
             try {
                 const cached = await redis?.get<Match[]>(cacheKey);
                 if (cached) {
@@ -515,11 +515,11 @@ class FootballHighlightsAPI {
      * Get lineups for a match
      * @param matchId Match ID
      */
-    async getLineups(matchId: number): Promise<LineupData[] | null> {
+    async getLineups(matchId: number, forceRefresh: boolean = false): Promise<LineupData[] | null> {
         const cacheKey = `fh:lineups:${matchId}`;
 
         // Try cache first (15 min TTL)
-        if (redis) {
+        if (!forceRefresh && redis) {
             try {
                 const cached = await redis?.get<LineupData[]>(cacheKey);
                 if (cached) {
@@ -571,12 +571,13 @@ export const footballHighlightsAPI = new FootballHighlightsAPI();
 export async function getH2HMatches(
     team1Id: number,
     team2Id: number,
-    limit: number = 10
+    limit: number = 10,
+    forceRefresh: boolean = false
 ): Promise<Match[]> {
     const cacheKey = `h2h:${Math.min(team1Id, team2Id)}-${Math.max(team1Id, team2Id)}:${limit}`;
 
     // Try cache first (24 hour TTL for H2H data)
-    if (redis) {
+    if (!forceRefresh && redis) {
         try {
             const cached = await redis?.get<Match[]>(cacheKey);
             if (cached) {

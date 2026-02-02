@@ -184,7 +184,7 @@ const fetchTeamNews = async (home: string, away: string): Promise<string> => {
 
 
 // AI Analysis with DeepSeek (Enhanced with Football Highlights API)
-const analyzeFixtures = async (fixtures: Fixture[]): Promise<Fixture[]> => {
+const analyzeFixtures = async (fixtures: Fixture[], forceRefresh: boolean = false): Promise<Fixture[]> => {
     if (!DEEPSEEK_KEY || fixtures.length === 0) return fixtures;
 
     // Implementation of Chunking: DeepSeek might fail with too many matches in one prompt
@@ -205,7 +205,7 @@ const analyzeFixtures = async (fixtures: Fixture[]): Promise<Fixture[]> => {
         // STEP 1: Enrich fixtures with Football Highlights API data
         console.log(`[AI Analysis] Enriching chunk ${i + 1} with Football Highlights API data...`);
         const { enrichFixtures, buildEnrichedContext } = await import('./match-enrichment-service');
-        const enrichedChunk = await enrichFixtures(chunk, 5); // Max 5 concurrent API calls
+        const enrichedChunk = await enrichFixtures(chunk, 5, forceRefresh); // Max 5 concurrent API calls
 
         // STEP 2: Fetch News for matches in this chunk in parallel
         const fixturesWithNewsAndData = await Promise.all(enrichedChunk.map(async (f) => {
@@ -477,7 +477,7 @@ export const getFixtures = async (
         if (rawFixtures && rawFixtures.length > 0) {
             // Run AI Analysis immediately on new data
             console.log(`[AI Analysis] Processing ${rawFixtures.length} ${sport} matches with DeepSeek...`);
-            fixtures = await analyzeFixtures(rawFixtures);
+            fixtures = await analyzeFixtures(rawFixtures, forceRefresh);
 
             try {
                 const batch = writeBatch(db);
