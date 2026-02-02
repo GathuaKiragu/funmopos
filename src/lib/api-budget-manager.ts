@@ -10,7 +10,7 @@ export type RequestPriority = 'high' | 'medium' | 'low';
  * Reserves budget for high-priority requests
  */
 export async function canMakeRequest(priority: RequestPriority = 'medium'): Promise<boolean> {
-    if (!isRedisEnabled()) {
+    if (!redis) {
         console.warn('[Budget] Redis not enabled, allowing request');
         return true;
     }
@@ -51,7 +51,7 @@ export async function canMakeRequest(priority: RequestPriority = 'medium'): Prom
  * Increment the daily request counter
  */
 export async function incrementRequestCount(): Promise<void> {
-    if (!isRedisEnabled()) {
+    if (!redis) {
         return;
     }
 
@@ -78,7 +78,7 @@ export async function incrementRequestCount(): Promise<void> {
  * Get current request count for today
  */
 export async function getCurrentRequestCount(): Promise<number> {
-    if (!isRedisEnabled()) {
+    if (!redis) {
         return 0;
     }
 
@@ -114,7 +114,7 @@ export function getLeaguePriority(leagueId: number): RequestPriority {
  * Reset request counter (for testing)
  */
 export async function resetRequestCount(): Promise<void> {
-    if (!isRedisEnabled()) {
+    if (!redis) {
         return;
     }
 

@@ -3,7 +3,9 @@
  * Run with: npx tsx scripts/analyze-accuracy.ts
  */
 
-import { db } from '../src/lib/firebase-admin';
+import { getAdminDb } from '../src/lib/firebase-admin';
+
+const db = getAdminDb();
 import { getResult } from '../src/lib/utils';
 import { Fixture } from '../src/lib/api-football';
 import { subDays, format } from 'date-fns';

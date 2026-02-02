@@ -23,7 +23,7 @@ export async function getH2HData(
 
         // 1. Check Redis cache (7 day TTL)
         const redisKey = `h2h:${h2hId}`;
-        if (isRedisEnabled()) {
+        if (redis) {
             try {
                 const cached = await redis.get<HeadToHead>(redisKey);
                 if (cached) {
@@ -49,7 +49,7 @@ export async function getH2HData(
                 console.log(`[H2H] Firestore hit for ${h2hId} (age: ${Math.round(age / 86400000)}d)`);
 
                 // Backfill Redis
-                if (isRedisEnabled()) {
+                if (redis) {
                     try {
                         await redis.set(redisKey, data, { ex: 7 * 24 * 60 * 60 }); // 7 days
                     } catch (err) {
@@ -102,7 +102,7 @@ export async function getH2HData(
         }
 
         // Save to Redis (7 day TTL)
-        if (isRedisEnabled()) {
+        if (redis) {
             try {
                 await redis.set(redisKey, h2hData, { ex: 7 * 24 * 60 * 60 });
             } catch (err) {

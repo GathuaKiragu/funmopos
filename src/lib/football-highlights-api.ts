@@ -290,7 +290,7 @@ class FootballHighlightsAPI {
         const cacheKey = `fh:team-stats:${teamId}:${fromDate}`;
 
         // Try cache first
-        if (isRedisEnabled()) {
+        if (redis) {
             try {
                 const cached = await redis?.get<TeamStatistics[]>(cacheKey);
                 if (cached) {
@@ -309,7 +309,7 @@ class FootballHighlightsAPI {
         });
 
         // Cache for 24 hours (stats update after matches)
-        if (data && isRedisEnabled()) {
+        if (data && redis) {
             try {
                 await redis?.set(cacheKey, data, { ex: 86400 });
             } catch (err) {
@@ -328,7 +328,7 @@ class FootballHighlightsAPI {
         const cacheKey = `fh:match-details:${matchId}`;
 
         // Try cache first (10 min TTL for live matches)
-        if (isRedisEnabled()) {
+        if (redis) {
             try {
                 const cached = await redis?.get<MatchDetails>(cacheKey);
                 if (cached) {
@@ -345,7 +345,7 @@ class FootballHighlightsAPI {
         const data = response?.data?.[0] || null;
 
         // Cache for 10 minutes
-        if (data && isRedisEnabled()) {
+        if (data && redis) {
             try {
                 await redis?.set(cacheKey, data, { ex: 600 });
             } catch (err) {
@@ -365,7 +365,7 @@ class FootballHighlightsAPI {
         const cacheKey = `fh:standings:${leagueId}:${season}`;
 
         // Try cache first (1 hour TTL)
-        if (isRedisEnabled()) {
+        if (redis) {
             try {
                 const cached = await redis?.get<StandingsData>(cacheKey);
                 if (cached) {
@@ -384,7 +384,7 @@ class FootballHighlightsAPI {
         });
 
         // Cache for 1 hour
-        if (data && isRedisEnabled()) {
+        if (data && redis) {
             try {
                 await redis?.set(cacheKey, data, { ex: 3600 });
             } catch (err) {
@@ -403,7 +403,7 @@ class FootballHighlightsAPI {
         const cacheKey = `fh:box-score:${matchId}`;
 
         // Try cache first (5 min TTL for live matches)
-        if (isRedisEnabled()) {
+        if (redis) {
             try {
                 const cached = await redis?.get<PlayerBoxScore[]>(cacheKey);
                 if (cached) {
@@ -419,7 +419,7 @@ class FootballHighlightsAPI {
         const data = await this.request<PlayerBoxScore[]>(`/box-score/${matchId}`);
 
         // Cache for 5 minutes
-        if (data && isRedisEnabled()) {
+        if (data && redis) {
             try {
                 await redis?.set(cacheKey, data, { ex: 300 });
             } catch (err) {
@@ -440,7 +440,7 @@ class FootballHighlightsAPI {
 
         // Try cache first (30 min for prematch, 5 min for live)
         const cacheTTL = oddsType === 'prematch' ? 1800 : 300;
-        if (isRedisEnabled()) {
+        if (redis) {
             try {
                 const cached = await redis?.get<OddsData[]>(cacheKey);
                 if (cached) {
@@ -460,7 +460,7 @@ class FootballHighlightsAPI {
         const data = response?.data || null;
 
         // Cache
-        if (data && isRedisEnabled()) {
+        if (data && redis) {
             try {
                 await redis?.set(cacheKey, data, { ex: cacheTTL });
             } catch (err) {
@@ -480,7 +480,7 @@ class FootballHighlightsAPI {
         const cacheKey = `fh:matches:${date}:${leagueId || 'all'}`;
 
         // Try cache first (10 min TTL)
-        if (isRedisEnabled()) {
+        if (redis) {
             try {
                 const cached = await redis?.get<Match[]>(cacheKey);
                 if (cached) {
@@ -500,7 +500,7 @@ class FootballHighlightsAPI {
         const data = response?.data || null;
 
         // Cache for 10 minutes
-        if (data && isRedisEnabled()) {
+        if (data && redis) {
             try {
                 await redis?.set(cacheKey, data, { ex: 600 });
             } catch (err) {
@@ -519,7 +519,7 @@ class FootballHighlightsAPI {
         const cacheKey = `fh:lineups:${matchId}`;
 
         // Try cache first (15 min TTL)
-        if (isRedisEnabled()) {
+        if (redis) {
             try {
                 const cached = await redis?.get<LineupData[]>(cacheKey);
                 if (cached) {
@@ -536,7 +536,7 @@ class FootballHighlightsAPI {
         const data = response?.response || null;
 
         // Cache for 15 minutes
-        if (data && isRedisEnabled()) {
+        if (data && redis) {
             try {
                 await redis?.set(cacheKey, data, { ex: 900 });
             } catch (err) {
@@ -576,7 +576,7 @@ export async function getH2HMatches(
     const cacheKey = `h2h:${Math.min(team1Id, team2Id)}-${Math.max(team1Id, team2Id)}:${limit}`;
 
     // Try cache first (24 hour TTL for H2H data)
-    if (isRedisEnabled()) {
+    if (redis) {
         try {
             const cached = await redis?.get<Match[]>(cacheKey);
             if (cached) {
@@ -632,7 +632,7 @@ export async function getH2HMatches(
         .slice(0, limit);
 
     // Cache for 24 hours
-    if (sortedMatches.length > 0 && isRedisEnabled()) {
+    if (sortedMatches.length > 0 && redis) {
         try {
             await redis?.set(cacheKey, sortedMatches, { ex: 86400 });
         } catch (err) {

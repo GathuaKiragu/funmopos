@@ -12,9 +12,13 @@ export async function GET() {
 
     // 1. Check Redis
     try {
-        await redis.set("health_check_test", "ok", { ex: 10 });
-        const val = await redis.get("health_check_test");
-        results.checks.redis = { status: val === "ok" ? "healthy" : "failed", message: val };
+        if (!redis) {
+            results.checks.redis = { status: "indeterminate", message: "Redis not configured" };
+        } else {
+            await redis.set("health_check_test", "ok", { ex: 10 });
+            const val = await redis.get("health_check_test");
+            results.checks.redis = { status: val === "ok" ? "healthy" : "failed", message: val };
+        }
     } catch (error: any) {
         results.checks.redis = { status: "failed", error: error.message };
     }

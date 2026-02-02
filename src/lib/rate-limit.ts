@@ -7,7 +7,7 @@ import { getAdminDb } from "@/lib/firebase-admin";
  */
 export async function checkRateLimit(identifier: string, limit: number = 3, windowSeconds: number = 600): Promise<{ success: boolean; msg?: string }> {
     try {
-        if (isRedisEnabled()) {
+        if (redis) {
             const key = `ratelimit:${identifier.replace(/[^a-zA-Z0-9]/g, '_')}`;
             const current = await redis.incr(key);
 

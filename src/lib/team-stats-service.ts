@@ -25,7 +25,7 @@ export async function getTeamStatistics(
     try {
         // 1. Check Redis cache (fastest)
         const redisKey = `team_stats:${teamId}:${season}`;
-        if (isRedisEnabled()) {
+        if (redis) {
             try {
                 const cached = await redis.get<TeamStatistics>(redisKey);
                 if (cached) {
@@ -51,7 +51,7 @@ export async function getTeamStatistics(
                 console.log(`[Team Stats] Firestore hit for team ${teamId} (age: ${Math.round(age / 3600000)}h)`);
 
                 // Backfill Redis
-                if (isRedisEnabled()) {
+                if (redis) {
                     try {
                         await redis.set(redisKey, data, { ex: 3600 }); // 1 hour
                     } catch (err) {
@@ -110,7 +110,7 @@ export async function getTeamStatistics(
         }
 
         // Save to Redis
-        if (isRedisEnabled()) {
+        if (redis) {
             try {
                 await redis.set(redisKey, stats, { ex: 3600 }); // 1 hour
             } catch (err) {

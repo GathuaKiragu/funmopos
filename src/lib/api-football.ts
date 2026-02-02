@@ -400,7 +400,7 @@ export const getFixtures = async (
 
     // 1. Try Redis (L1 Cache)
     const redisKey = `fixtures:${sport}:${dateKey}`;
-    if (!forceRefresh && isRedisEnabled()) {
+    if (!forceRefresh && redis) {
         try {
             const cached = await redis?.get<Fixture[]>(redisKey);
             if (cached && cached.length > 0) {
@@ -428,7 +428,7 @@ export const getFixtures = async (
                 console.log(`[Cache Hit] Serving ${fixtures.length} ${sport} fixtures for ${dateKey}`);
 
                 // Back-fill Redis for next time
-                if (isRedisEnabled()) {
+                if (redis) {
                     const isPast = new Date(dateKey) < new Date(getNairobiNow().toISOString().split('T')[0]);
                     const ttl = isPast ? 86400 : 600; // 24h for past, 10m for future/today
                     await redis?.set(redisKey, fixtures, { ex: ttl });
@@ -489,7 +489,7 @@ export const getFixtures = async (
                 console.log(`[Cache Update] Saved ${fixtures.length} analyzed ${sport} matches for ${dateKey}.`);
 
                 // Update Redis too
-                if (isRedisEnabled()) {
+                if (redis) {
                     const isPastDate = new Date(dateKey) < new Date(getNairobiNow().toISOString().split('T')[0]);
                     const ttl = isPastDate ? 86400 : 600; // 24h for past, 10m for future
                     await redis?.set(redisKey, fixtures, { ex: ttl });
