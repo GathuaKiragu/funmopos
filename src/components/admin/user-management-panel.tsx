@@ -141,12 +141,37 @@ export default function UserManagementPanel() {
                                     </td>
                                     <td className="py-3 px-4">
                                         <div className="flex flex-col gap-1">
-                                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium w-fit ${user.tier === 'vip' ? 'bg-yellow-500/20 text-yellow-400' :
-                                                    user.tier === 'pro' ? 'bg-purple-500/20 text-purple-400' :
-                                                        'bg-gray-500/20 text-gray-400'
-                                                }`}>
-                                                {user.tier?.toUpperCase()}
-                                            </span>
+                                            {(() => {
+                                                const expiryDate = user.subscriptionExpiry ? new Date(user.subscriptionExpiry) : null;
+                                                const isExpired = expiryDate ? expiryDate < new Date() : true;
+                                                const isTrial = user.createdAt ? (new Date().getTime() - new Date(user.createdAt).getTime() < 24 * 60 * 60 * 1000) : false;
+
+                                                let statusLabel = user.tier?.toUpperCase() || 'FREE';
+                                                let styleClass = 'bg-gray-500/20 text-gray-400';
+
+                                                if (user.tier === 'vip' && !isExpired) {
+                                                    styleClass = 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/20';
+                                                } else if ((user.tier === 'pro' || user.tier === 'basic') && !isExpired) {
+                                                    styleClass = 'bg-purple-500/20 text-purple-400 border border-purple-500/20';
+                                                } else if (isTrial && !isExpired) {
+                                                    styleClass = 'bg-blue-500/20 text-blue-400 border border-blue-500/20';
+                                                    statusLabel = 'TRIAL';
+                                                } else if (isExpired && user.tier !== 'free') {
+                                                    styleClass = 'bg-red-500/10 text-red-500 border border-red-500/20';
+                                                    statusLabel = `EXPIRED (${user.tier?.substring(0, 3).toUpperCase()})`;
+                                                }
+
+                                                return (
+                                                    <div className="flex flex-col">
+                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold w-fit ${styleClass}`}>
+                                                            {statusLabel}
+                                                        </span>
+                                                        {expiryDate && !isExpired && (
+                                                            <span className="text-[10px] text-gray-500 mt-0.5">Expires: {expiryDate.toLocaleDateString()}</span>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })()}
                                         </div>
                                     </td>
                                     <td className="py-3 px-4">

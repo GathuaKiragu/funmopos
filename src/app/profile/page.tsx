@@ -8,7 +8,7 @@ import { signOut } from "firebase/auth";
 import { useEffect, useState } from "react";
 import { doc, getDoc, collection, query, where, getDocs, orderBy, updateDoc } from "firebase/firestore";
 import { PaymentModal } from "@/components/payment-modal";
-import { Loader2, User, CreditCard, History, LogOut, ChevronLeft, Wallet } from "lucide-react";
+import { Loader2, User, CreditCard, History, LogOut, ChevronLeft, ChevronRight, Wallet } from "lucide-react";
 import Link from "next/link";
 
 interface UserProfile {
@@ -220,6 +220,21 @@ export default function ProfilePage() {
                                     <p>No transactions found.</p>
                                 </div>
                             )}
+                        </div>
+                    </div>
+
+                    {/* App Info & Links */}
+                    <div className="bg-white/5 rounded-xl p-6 border border-white/10">
+                        <h2 className="text-lg font-bold mb-4">About Funmo Tips</h2>
+                        <div className="space-y-3">
+                            <Link href="/about" className="flex items-center justify-between p-4 bg-black/30 rounded-lg hover:bg-black/50 transition-colors">
+                                <span className="font-medium">How Predictions Work</span>
+                                <ChevronRight className="w-4 h-4 text-gray-500" />
+                            </Link>
+                            <Link href="/terms" className="flex items-center justify-between p-4 bg-black/30 rounded-lg hover:bg-black/50 transition-colors">
+                                <span className="font-medium text-gray-400">Terms of Service</span>
+                                <ChevronRight className="w-4 h-4 text-gray-500" />
+                            </Link>
                         </div>
                     </div>
 
