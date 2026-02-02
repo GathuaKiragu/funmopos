@@ -30,7 +30,7 @@ export async function GET() {
         };
 
         try {
-            // Get page views
+            // Get page views (recent 100 for display)
             const viewsRef = collection(db, 'analytics_views');
             const viewsQuery = query(viewsRef, orderBy('timestamp', 'desc'), limit(100));
             const viewsSnapshot = await getDocs(viewsQuery);
@@ -40,9 +40,12 @@ export async function GET() {
                 ...doc.data(),
                 timestamp: doc.data().timestamp?.toDate?.()?.toISOString() || null
             }));
-            analytics.stats.totalViews = viewsSnapshot.size;
 
-            // Get leads
+            // Get TOTAL count (not just the 100 we fetched)
+            const allViewsSnapshot = await getDocs(collection(db, 'analytics_views'));
+            analytics.stats.totalViews = allViewsSnapshot.size;
+
+            // Get leads (recent 50 for display)
             const leadsRef = collection(db, 'leads');
             const leadsQuery = query(leadsRef, orderBy('createdAt', 'desc'), limit(50));
             const leadsSnapshot = await getDocs(leadsQuery);
@@ -52,7 +55,10 @@ export async function GET() {
                 ...doc.data(),
                 createdAt: doc.data().createdAt?.toDate?.()?.toISOString() || null
             }));
-            analytics.stats.totalLeads = leadsSnapshot.size;
+
+            // Get TOTAL leads count
+            const allLeadsSnapshot = await getDocs(collection(db, 'leads'));
+            analytics.stats.totalLeads = allLeadsSnapshot.size;
 
             // Calculate today's stats
             const today = new Date();
