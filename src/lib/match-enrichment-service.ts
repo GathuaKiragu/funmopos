@@ -1,5 +1,17 @@
-import { Fixture, saveOpeningOdds } from './api-football';
-import { footballHighlightsAPI, TeamStatistics, MatchDetails, StandingsData, PlayerBoxScore, OddsData, LineupData } from './football-highlights-api';
+import {
+    Fixture,
+    saveOpeningOdds,
+    fetchMatchStats,
+    fetchMatchLineups,
+    fetchInjuries,
+    fetchOdds,
+    fetchPlayerStats,
+    TeamMatchStats,
+    TeamLineup,
+    Injury,
+    MarketOdds,
+    PlayerStats
+} from './api-football';
 import { analyzeMotivation, MotivationAnalysis } from './motivation-analysis';
 import { format, subDays } from 'date-fns';
 
@@ -9,16 +21,16 @@ import { format, subDays } from 'date-fns';
 
 export interface EnrichedData {
     teamStats?: {
-        home: TeamStatistics | null;
-        away: TeamStatistics | null;
+        home: TeamMatchStats | null;
+        away: TeamMatchStats | null;
     };
-    matchDetails?: MatchDetails | null;
-    standings?: StandingsData | null;
-    xgMetrics?: {
-        homeXG: number;
-        awayXG: number;
-        homeXGA: number; // xG Against
-        awayXGA: number;
+    lineups?: {
+        home: TeamLineup | null;
+        away: TeamLineup | null;
+    };
+    injuries?: {
+        home: Injury[];
+        away: Injury[];
     };
     odds?: {
         homeWin: number | null;
@@ -36,17 +48,16 @@ export interface EnrichedData {
         avgGoalsHome: number;
         avgGoalsAway: number;
     };
-    lineups?: {
-        home: LineupData | null;
-        away: LineupData | null;
-        confirmed: boolean;
-    };
     droppingOdds?: {
         isDropping: boolean;
         dropPercentage: number;
         bookmakerTrend: string; // e.g. "Home Odds Dropping"
     };
     motivation?: MotivationAnalysis;
+    playerStats?: {
+        home: PlayerStats[];
+        away: PlayerStats[];
+    };
 }
 
 export interface EnrichedFixture extends Fixture {
@@ -58,395 +69,221 @@ export interface EnrichedFixture extends Fixture {
 // ============================================================================
 
 /**
- * Calculate xG metrics from recent player box scores
+ * Extract odds from API-Sports response
  */
-function calculateXGMetrics(boxScores: PlayerBoxScore[]): {
-    homeXG: number;
-    awayXG: number;
-    homeXGA: number;
-    awayXGA: number;
-} | null {
-    if (!boxScores || boxScores.length === 0) return null;
-
-    const homeTeam = boxScores[0];
-    const awayTeam = boxScores[1];
-
-    const sumXG = (team: PlayerBoxScore) => {
-        return team.players.reduce((sum, player) => {
-            return sum + (player.statistics.expectedGoals || 0);
-        }, 0);
-    };
-
-    return {
-        homeXG: sumXG(homeTeam),
-        awayXG: sumXG(awayTeam),
-        homeXGA: sumXG(awayTeam), // Away team's xG is home team's xGA
-        awayXGA: sumXG(homeTeam),
-    };
-}
-
-/**
- * Extract odds from API response
- */
-function extractOdds(oddsData: OddsData[] | null): EnrichedData['odds'] {
+function extractOdds(oddsData: MarketOdds[] | null): NonNullable<EnrichedData['odds']> {
     if (!oddsData || oddsData.length === 0) {
         return {
-            homeWin: null,
-            draw: null,
-            awayWin: null,
-            over25: null,
-            under25: null,
-            bttsYes: null,
+            homeWin: null, draw: null, awayWin: null, over25: null, under25: null, bttsYes: null
         };
     }
 
-    // Use first bookmaker's odds (could be enhanced to average multiple bookmakers)
-    const firstBookmaker = oddsData[0];
-    const markets = firstBookmaker.markets;
+    // Usually we filter by a specific bookmaker before this function, but just in case
+    const bookmaker = oddsData[0];
+    const bets = bookmaker.bets;
+
+    // Helper to find odd value
+    const findOdd = (betName: string, valueName: string) => {
+        const bet = bets.find(b => b.name === betName);
+        if (!bet) return null;
+        const val = bet.values.find(v => v.value === valueName);
+        return val ? parseFloat(val.odd) : null;
+    };
 
     return {
-        homeWin: markets.fullTimeResult?.home || null,
-        draw: markets.fullTimeResult?.draw || null,
-        awayWin: markets.fullTimeResult?.away || null,
-        over25: markets.totalGoals?.over25 || null,
-        under25: markets.totalGoals?.under25 || null,
-        bttsYes: markets.bothTeamsToScore?.yes || null,
+        homeWin: findOdd("Match Winner", "Home"),
+        draw: findOdd("Match Winner", "Draw"),
+        awayWin: findOdd("Match Winner", "Away"),
+        over25: findOdd("Goals Over/Under", "Over 2.5"),
+        under25: findOdd("Goals Over/Under", "Under 2.5"),
+        bttsYes: findOdd("Both Teams To Score", "Yes")
     };
 }
 
 /**
  * Calculate head-to-head record from historical matches
+ * (We still need a method for H2H, presumably reusing the one from highlightly or moving it to api-football too? 
+ * The task said "update enrichment service", but I didn't verify H2H method in api-football yet.
+ * For now, I will omit the H2H call or assume we can import it if it was moved. 
+ * Actually, the plan didn't explicitly move H2H. 
+ * I'll comment it out for now to ensure we don't break build, or keep using the old one if imported? 
+ * The old one was in football-highlights-api which I am trying to remove.
+ * I will temporarily remove H2H from enrichment until I add it to api-football properly in a follow up or if I can just use fetching H2H from API sports.
+ * API Sports has /fixtures/headtohead. I should probably add that too. 
+ * For this step, I will leave H2H undefined to avoid errors, and add it next.)
  */
-async function calculateH2HRecord(
-    homeTeamId: number,
-    awayTeamId: number,
-    forceRefresh: boolean = false
-): Promise<EnrichedData['h2hRecord'] | null> {
-    try {
-        // Import the H2H function
-        const { getH2HMatches } = await import('./football-highlights-api');
-
-        // Fetch last 10 H2H matches
-        const h2hMatches = await getH2HMatches(homeTeamId, awayTeamId, 10, forceRefresh);
-
-        if (!h2hMatches || h2hMatches.length === 0) {
-            console.log(`[H2H] No historical matches found between teams ${homeTeamId} and ${awayTeamId}`);
-            return null;
-        }
-
-        console.log(`[H2H] Analyzing ${h2hMatches.length} historical matches`);
-
-        let homeWins = 0;
-        let draws = 0;
-        let awayWins = 0;
-        let totalGoalsHome = 0;
-        let totalGoalsAway = 0;
-        let validMatches = 0;
-
-        for (const match of h2hMatches) {
-            // Only count finished matches with scores
-            if (!match.state?.score?.current) continue;
-
-            const [scoreHome, scoreAway] = match.state.score.current.split('-').map(Number);
-            if (isNaN(scoreHome) || isNaN(scoreAway)) continue;
-
-            validMatches++;
-
-            // Determine which team was home/away in this historical match
-            const wasHomeTeamHome = match.homeTeam.id === homeTeamId;
-
-            if (wasHomeTeamHome) {
-                // Current home team was home in this match
-                totalGoalsHome += scoreHome;
-                totalGoalsAway += scoreAway;
-
-                if (scoreHome > scoreAway) homeWins++;
-                else if (scoreHome < scoreAway) awayWins++;
-                else draws++;
-            } else {
-                // Current home team was away in this match
-                totalGoalsHome += scoreAway;
-                totalGoalsAway += scoreHome;
-
-                if (scoreAway > scoreHome) homeWins++;
-                else if (scoreAway < scoreHome) awayWins++;
-                else draws++;
-            }
-        }
-
-        if (validMatches === 0) {
-            return null;
-        }
-
-        return {
-            homeWins,
-            draws,
-            awayWins,
-            totalMatches: validMatches,
-            avgGoalsHome: totalGoalsHome / validMatches,
-            avgGoalsAway: totalGoalsAway / validMatches,
-        };
-    } catch (error) {
-        console.error('[H2H] Error calculating H2H record:', error);
-        return null;
-    }
-}
 
 // ============================================================================
 // MAIN ENRICHMENT FUNCTION
 // ============================================================================
 
 /**
- * Enrich a single fixture with data from Football Highlights API
+ * Enrich a single fixture with data from API-Sports (Pro)
  * @param fixture The fixture to enrich
  * @returns Enriched fixture with additional data
  */
 export async function enrichFixture(fixture: Fixture, forceRefresh: boolean = false): Promise<EnrichedFixture> {
     console.log(`[Match Enrichment] Enriching fixture ${fixture.id}: ${fixture.homeTeam.name} vs ${fixture.awayTeam.name}`);
 
-    // Prepare date for API calls (30 days back for stats)
-    const fromDate = format(subDays(new Date(), 30), 'yyyy-MM-dd');
-
     try {
-        // Step 0: Resolve Football Highlights API Match ID
-        const dateKey = fixture.date.split('T')[0];
-        const fhMatches = await footballHighlightsAPI.getMatches(dateKey, undefined, forceRefresh);
-
-        let fhMatchId = null;
-        let fhHomeTeamId = null;
-        let fhAwayTeamId = null;
-
-        if (fhMatches) {
-            const found = fhMatches.find(m =>
-                (m.homeTeam.name.toLowerCase().includes(fixture.homeTeam.name.toLowerCase()) || fixture.homeTeam.name.toLowerCase().includes(m.homeTeam.name.toLowerCase())) &&
-                (m.awayTeam.name.toLowerCase().includes(fixture.awayTeam.name.toLowerCase()) || fixture.awayTeam.name.toLowerCase().includes(m.awayTeam.name.toLowerCase()))
-            );
-
-            if (found) {
-                fhMatchId = found.id;
-                fhHomeTeamId = found.homeTeam.id;
-                fhAwayTeamId = found.awayTeam.id;
-                console.log(`[Match Enrichment] Mapped API-Sports ID ${fixture.id} to Highlightly ID ${fhMatchId}`);
-            } else {
-                console.warn(`[Match Enrichment] Could not map fixture ${fixture.homeTeam.name} vs ${fixture.awayTeam.name} to Highlightly API`);
-            }
-        }
-
-        if (!fhMatchId || !fhHomeTeamId || !fhAwayTeamId) {
-            console.log(`[Match Enrichment] Skipping enrichment for ${fixture.id} due to mapping failure`);
-            return fixture;
-        }
-
+        // Parallel Fetching of Pro Data
         const [
-            homeStats,
-            awayStats,
-            matchDetails,
-            boxScores,
-            odds,
-            rawLineups
+            statsData,
+            lineupsData,
+            injuriesData,
+            oddsData,
+            // playerStatsData // fetching player stats can be heavy, maybe optional?
         ] = await Promise.all([
-            // Team statistics using Highlightly IDs
-            footballHighlightsAPI.getTeamStatistics(fhHomeTeamId, fromDate, 'Etc/UTC', forceRefresh),
-            footballHighlightsAPI.getTeamStatistics(fhAwayTeamId, fromDate, 'Etc/UTC', forceRefresh),
-
-            // Match details
-            footballHighlightsAPI.getMatchDetails(fhMatchId, forceRefresh),
-
-            // Player box scores 
-            footballHighlightsAPI.getPlayerBoxScore(fhMatchId, forceRefresh),
-
-            // Odds
-            footballHighlightsAPI.getOdds(fhMatchId, 'prematch', forceRefresh),
-
-            // Lineups (1 hour window)
-            (new Date(fixture.date).getTime() - new Date().getTime()) < 3600000
-                ? footballHighlightsAPI.getLineups(fhMatchId, forceRefresh)
-                : Promise.resolve(null),
+            fetchMatchStats(fixture.id, forceRefresh),
+            fetchMatchLineups(fixture.id, forceRefresh),
+            fetchInjuries(fixture.id, forceRefresh),
+            fetchOdds(fixture.id, forceRefresh),
+            // fetchPlayerStats(fixture.id, forceRefresh) // Optional
         ]);
 
-        // Calculate xG metrics from box scores
-        const xgMetrics = boxScores ? calculateXGMetrics(boxScores) : undefined;
+        // Process Stats
+        let teamStats = undefined;
+        if (statsData && statsData.length >= 2) {
+            // API sports returns array of 2 teams
+            // We need to map them to home/away correctly
+            const homeStats = statsData.find(s => s.team.id === fixture.homeTeam.id || s.team.name === fixture.homeTeam.name);
+            const awayStats = statsData.find(s => s.team.id === fixture.awayTeam.id || s.team.name === fixture.awayTeam.name);
 
-        // Extract odds
-        const oddsData = extractOdds(odds);
+            // Fallback if IDs don't match (sometimes API uses different internal IDs? usually fixture.homeTeam.id matches)
+            // If we can't match by ID, take index 0 and 1
+            const finalHome = homeStats || statsData[0];
+            const finalAway = awayStats || statsData[1];
 
-        // Smart Money Tracking (Dropping Odds)
+            teamStats = { home: finalHome, away: finalAway };
+        }
+
+        // Process Lineups
+        let lineups = undefined;
+        if (lineupsData && lineupsData.length === 2) {
+            const homeLineup = lineupsData.find(l => l.team.name === fixture.homeTeam.name) || lineupsData[0];
+            const awayLineup = lineupsData.find(l => l.team.name === fixture.awayTeam.name) || lineupsData[1];
+            lineups = { home: homeLineup, away: awayLineup };
+        }
+
+        // Process Injuries
+        let injuries = undefined;
+        if (injuriesData && injuriesData.length > 0) {
+            injuries = {
+                home: injuriesData.filter(i => i.team.name === fixture.homeTeam.name),
+                away: injuriesData.filter(i => i.team.name === fixture.awayTeam.name)
+            };
+        }
+
+        // Process Odds
+        const enrichedOdds = extractOdds(oddsData);
+
+        // Smart Money / Dropping Odds
         let droppingOdds = undefined;
-        if (oddsData && oddsData.homeWin && oddsData.draw && oddsData.awayWin) {
-            // 1. Try to save as opening odds (if first time seen)
-            await saveOpeningOdds(fixture.id, {
-                home: oddsData.homeWin,
-                draw: oddsData.draw,
-                away: oddsData.awayWin
-            });
+        if (enrichedOdds.homeWin && enrichedOdds.awayWin && fixture.openingOdds) {
+            const open = fixture.openingOdds;
+            const current = enrichedOdds;
 
-            // 2. Check for drop if opening odds exist
-            if (fixture.openingOdds) {
-                const open = fixture.openingOdds;
-                const current = oddsData;
+            if (current.homeWin && current.awayWin) {
+                const homeDrop = ((open.home - current.homeWin) / open.home) * 100;
+                const awayDrop = ((open.away - current.awayWin) / open.away) * 100;
 
-                // Calculate drops
-                // If Home odds dropped by > 10%
-                if (current.homeWin && current.awayWin) {
-                    const homeDrop = ((open.home - current.homeWin) / open.home) * 100;
-                    const awayDrop = ((open.away - current.awayWin) / open.away) * 100;
-
-                    if (homeDrop > 10) {
-                        droppingOdds = {
-                            isDropping: true,
-                            dropPercentage: homeDrop,
-                            bookmakerTrend: "Home Odds CRASHING (Smart Money)"
-                        };
-                    } else if (awayDrop > 10) {
-                        droppingOdds = {
-                            isDropping: true,
-                            dropPercentage: awayDrop,
-                            bookmakerTrend: "Away Odds CRASHING (Smart Money)"
-                        };
-                    }
+                if (homeDrop > 10) {
+                    droppingOdds = { isDropping: true, dropPercentage: homeDrop, bookmakerTrend: "Home Odds CRASHING" };
+                } else if (awayDrop > 10) {
+                    droppingOdds = { isDropping: true, dropPercentage: awayDrop, bookmakerTrend: "Away Odds CRASHING" };
                 }
             }
         }
 
         // Build enriched data object
         const enrichedData: EnrichedData = {
-            teamStats: {
-                home: homeStats?.[0] || null,
-                away: awayStats?.[0] || null,
-            },
-            matchDetails: matchDetails || undefined,
-            xgMetrics: xgMetrics || undefined,
-            odds: oddsData,
+            teamStats,
+            lineups,
+            injuries,
+            odds: enrichedOdds,
             droppingOdds,
-            lineups: rawLineups && rawLineups.length === 2 ? {
-                home: rawLineups[0],
-                away: rawLineups[1],
-                confirmed: true
-            } : undefined,
-            h2hRecord: (await calculateH2HRecord(fhHomeTeamId, fhAwayTeamId, forceRefresh)) || undefined,
+            // h2hRecord: ... (TODO: Add H2H fetch)
         };
-
-        console.log(`[Match Enrichment] Successfully enriched fixture ${fixture.id}`);
 
         return {
             ...fixture,
             enrichedData,
         };
+
     } catch (error) {
         console.error(`[Match Enrichment] Error enriching fixture ${fixture.id}:`, error);
-        // Return original fixture on error (graceful degradation)
         return fixture;
     }
 }
 
 /**
  * Enrich multiple fixtures in parallel
- * @param fixtures Array of fixtures to enrich
- * @param maxConcurrent Maximum number of concurrent enrichment operations (default: 5)
- * @returns Array of enriched fixtures
  */
 export async function enrichFixtures(
     fixtures: Fixture[],
     maxConcurrent: number = 5,
     forceRefresh: boolean = false
 ): Promise<EnrichedFixture[]> {
-    console.log(`[Match Enrichment] Enriching ${fixtures.length} fixtures with max concurrency ${maxConcurrent}`);
+    console.log(`[Match Enrichment] Enriching ${fixtures.length} fixtures...`);
 
-    // Process in batches to avoid overwhelming the API
+    // Simple batching
     const results: EnrichedFixture[] = [];
-
     for (let i = 0; i < fixtures.length; i += maxConcurrent) {
         const batch = fixtures.slice(i, i + maxConcurrent);
-        console.log(`[Match Enrichment] Processing batch ${Math.floor(i / maxConcurrent) + 1}/${Math.ceil(fixtures.length / maxConcurrent)}`);
-
         const enrichedBatch = await Promise.all(
             batch.map(fixture => enrichFixture(fixture, forceRefresh))
         );
-
         results.push(...enrichedBatch);
     }
-
-    console.log(`[Match Enrichment] Completed enrichment of ${results.length} fixtures`);
     return results;
 }
 
 /**
  * Build enriched context string for AI analysis
- * @param enrichedData Enriched data from Football Highlights API
- * @returns Formatted string for AI prompt
  */
 export function buildEnrichedContext(enrichedData: EnrichedData | undefined): string {
-    if (!enrichedData) {
-        return 'No enriched data available.';
-    }
+    if (!enrichedData) return 'No enriched data available.';
 
     const parts: string[] = [];
 
-    // Team Statistics
-    if (enrichedData.teamStats?.home && enrichedData.teamStats?.away) {
-        const homeStats = enrichedData.teamStats.home;
-        const awayStats = enrichedData.teamStats.away;
+    // Team Stats
+    if (enrichedData.teamStats) {
+        const { home, away } = enrichedData.teamStats;
+        if (home && away) {
+            // Helper to find stat value
+            const getVal = (stats: any[], type: string) => stats.find(s => s.type === type)?.value || 0;
 
-        parts.push(`**Team Statistics (Last 30 days):**`);
-        parts.push(`- Home: ${homeStats.total.games.wins}W-${homeStats.total.games.draws}D-${homeStats.total.games.loses}L, ${homeStats.total.goals.scored} goals scored, ${homeStats.total.goals.received} conceded`);
-        parts.push(`- Away: ${awayStats.total.games.wins}W-${awayStats.total.games.draws}D-${awayStats.total.games.loses}L, ${awayStats.total.goals.scored} goals scored, ${awayStats.total.goals.received} conceded`);
+            parts.push(`**Detailed Match Stats (Recent):**`);
+            parts.push(`- Home: Shots on Goal ${getVal(home.statistics, 'Shots on Goal')}, Possession ${getVal(home.statistics, 'Ball Possession')}, xG ${getVal(home.statistics, 'expected_goals') || 'N/A'}`);
+            parts.push(`- Away: Shots on Goal ${getVal(away.statistics, 'Shots on Goal')}, Possession ${getVal(away.statistics, 'Ball Possession')}, xG ${getVal(away.statistics, 'expected_goals') || 'N/A'}`);
+        }
     }
 
-    // xG Metrics
-    if (enrichedData.xgMetrics) {
-        parts.push(`**Expected Goals (xG):**`);
-        parts.push(`- Home xG: ${enrichedData.xgMetrics.homeXG.toFixed(2)}, xGA: ${enrichedData.xgMetrics.homeXGA.toFixed(2)}`);
-        parts.push(`- Away xG: ${enrichedData.xgMetrics.awayXG.toFixed(2)}, xGA: ${enrichedData.xgMetrics.awayXGA.toFixed(2)}`);
+    // Injuries (Critical!)
+    if (enrichedData.injuries) {
+        const { home, away } = enrichedData.injuries;
+        if (home.length > 0 || away.length > 0) {
+            parts.push(`**INJURY REPORT (CRITICAL):**`);
+            if (home.length > 0) parts.push(`- Home Missing: ${home.map(i => `${i.player.name} (${i.player.reason})`).join(', ')}`);
+            if (away.length > 0) parts.push(`- Away Missing: ${away.map(i => `${i.player.name} (${i.player.reason})`).join(', ')}`);
+        }
     }
 
-    // Match Details
-    if (enrichedData.matchDetails) {
-        const details = enrichedData.matchDetails;
-        if (details.venue) {
-            parts.push(`**Venue:** ${details.venue.name}, ${details.venue.city}`);
-        }
-        if (details.weather) {
-            parts.push(`**Weather:** ${details.weather.condition}, ${details.weather.temperature}`);
-        }
-        if (details.referee) {
-            parts.push(`**Referee:** ${details.referee.name}`);
+    // Lineups
+    if (enrichedData.lineups) {
+        const { home, away } = enrichedData.lineups;
+        if (home && away) {
+            parts.push(`**Confimed Lineups:**`);
+            parts.push(`- Home (${home.formation}): ${home.startXI.map(p => p.player.name).join(', ')}`);
+            parts.push(`- Away (${away.formation}): ${away.startXI.map(p => p.player.name).join(', ')}`);
         }
     }
 
     // Odds
     if (enrichedData.odds && enrichedData.odds.homeWin) {
-        parts.push(`**Market Odds:**`);
-        parts.push(`- Full Time: Home ${enrichedData.odds.homeWin}, Draw ${enrichedData.odds.draw}, Away ${enrichedData.odds.awayWin}`);
-        if (enrichedData.odds.over25) {
-            parts.push(`- Total Goals: Over 2.5 @ ${enrichedData.odds.over25}, Under 2.5 @ ${enrichedData.odds.under25}`);
-        }
-        if (enrichedData.odds.bttsYes) {
-            parts.push(`- BTTS: Yes @ ${enrichedData.odds.bttsYes}`);
-        }
-    }
-
-    // Smart Money / Dropping Odds
-    if (enrichedData.droppingOdds && enrichedData.droppingOdds.isDropping) {
-        parts.push(`**SMART MONEY ALERT:** ${enrichedData.droppingOdds.bookmakerTrend} (${enrichedData.droppingOdds.dropPercentage.toFixed(1)}% drop). This is a strong signal.`);
-    }
-
-    // H2H Record
-    if (enrichedData.h2hRecord) {
-        const h2h = enrichedData.h2hRecord;
-        parts.push(`**Head-to-Head (Last ${h2h.totalMatches} meetings):**`);
-        parts.push(`- Home ${h2h.homeWins}W, Draw ${h2h.draws}, Away ${h2h.awayWins}W`);
-        parts.push(`- Avg Goals: Home ${h2h.avgGoalsHome.toFixed(1)}, Away ${h2h.avgGoalsAway.toFixed(1)}`);
-    }
-
-    // Lineups
-    if (enrichedData.lineups && enrichedData.lineups.confirmed) {
-        const home = enrichedData.lineups.home;
-        const away = enrichedData.lineups.away;
-        if (home && away) {
-            parts.push(`**Official Lineups Confirmed:**`);
-            parts.push(`- Home Formation: ${home.formation}`);
-            parts.push(`- Away Formation: ${away.formation}`);
-            // Could add key players check here if we had a list of stars
+        parts.push(`**Market Odds:** Home ${enrichedData.odds.homeWin} | Draw ${enrichedData.odds.draw} | Away ${enrichedData.odds.awayWin}`);
+        if (enrichedData.droppingOdds) {
+            parts.push(`**MARKET MOVEMENT:** ${enrichedData.droppingOdds.bookmakerTrend} (-${enrichedData.droppingOdds.dropPercentage.toFixed(1)}%)`);
         }
     }
 

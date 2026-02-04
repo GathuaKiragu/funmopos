@@ -26,10 +26,12 @@ export interface Fixture {
         flag: string;
     };
     homeTeam: {
+        id: number;
         name: string;
         logo: string;
     };
     awayTeam: {
+        id: number;
         name: string;
         logo: string;
     };
@@ -57,6 +59,68 @@ export interface Fixture {
         isRisky: boolean;
         requiresTier: "free" | "basic" | "standard" | "vip";
     } | null;
+    // New Pro Data Points
+    stats?: {
+        home: TeamMatchStats;
+        away: TeamMatchStats;
+    };
+    lineups?: {
+        home: TeamLineup;
+        away: TeamLineup;
+    };
+    injuries?: Injury[];
+    playerStats?: {
+        home: PlayerStats[];
+        away: PlayerStats[];
+    };
+    latestOdds?: MarketOdds[];
+}
+
+// --- Pro API Interfaces ---
+
+export interface TeamMatchStats {
+    team: { id: number; name: string; logo: string };
+    statistics: { type: string; value: any }[];
+}
+
+export interface TeamLineup {
+    team: { id: number; name: string; logo: string };
+    formation: string;
+    startXI: { player: { id: number; name: string; number: number; pos: string; grid: string } }[];
+    substitutes: { player: { id: number; name: string; number: number; pos: string; grid: string } }[];
+    coach: { id: number; name: string; photo?: string };
+}
+
+export interface Injury {
+    player: { id: number; name: string; photo: string; type: string; reason: string };
+    team: { id: number; name: string; logo: string };
+    fixture: { id: number; date: string; timestamp: number; timezone: string };
+}
+
+export interface PlayerStats {
+    player: { id: number; name: string; photo: string };
+    statistics: {
+        games: { minutes: number; position: string; rating: string; captain: boolean; substitute: boolean };
+        shots: { total: number; on: number };
+        goals: { total: number; assists: number; saves: number };
+        passes: { total: number; key: number; accuracy: number };
+        tackles: { total: number; blocks: number; interceptions: number };
+        duels: { total: number; won: number };
+        dribbles: { attempts: number; success: number };
+        fouls: { drawn: number; committed: number };
+        cards: { yellow: number; red: number };
+        penalty: { won: number; commited: number; scored: number; missed: number; saved: number };
+    }[];
+}
+
+export interface MarketOdds {
+    id: number; // Bookmaker ID
+    name: string; // Bookmaker Name
+    bets: {
+        id: number;
+        name: string;
+        values: { value: string; odd: string }[];
+    }[];
 }
 
 const API_KEY = process.env.API_FOOTBALL_KEY;
@@ -130,10 +194,12 @@ const fetchFromApi = async (targetDate: Date, sport: Sport = "football"): Promis
                 flag: item.league.flag || ""
             },
             homeTeam: {
+                id: item.teams.home.id,
                 name: item.teams.home.name,
                 logo: item.teams.home.logo
             },
             awayTeam: {
+                id: item.teams.away.id,
                 name: item.teams.away.name,
                 logo: item.teams.away.logo
             },
@@ -156,6 +222,143 @@ const fetchFromApi = async (targetDate: Date, sport: Sport = "football"): Promis
         console.error("API-Sports Fetch Error:", error);
         return [];
     }
+};
+
+/**
+ * Generic helper to fetch data from API-Sports with caching.
+ * @param endpoint API endpoint (e.g. "/fixtures/statistics")
+ * @param params Query parameters
+ * @param cacheKeyPrefix Redis key prefix
+ * @param ttlSeconds Cache TTL
+ * @param forceRefresh Ignore cache
+ */
+async function fetchFromApiRich<T>(
+    endpoint: string,
+    params: any,
+    cacheKeyPrefix: string,
+    ttlSeconds: number,
+    forceRefresh: boolean
+): Promise<T | null> {
+    if (!API_KEY) return null;
+
+    // Build Cache Key
+    const paramString = Object.entries(params)
+        .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+        .map(([key, val]) => `${key}=${val}`)
+        .join(':');
+    const cacheKey = `${cacheKeyPrefix}:${paramString}`;
+
+    // 1. Try Cache
+    if (!forceRefresh && redis) {
+        try {
+            const cached = await redis.get<T>(cacheKey);
+            if (cached) {
+                // console.log(`[API-Sports Cache Hit] ${cacheKey}`);
+                return cached;
+            }
+        } catch (e) {
+            console.error(`Redis Read Error (${cacheKey}):`, e);
+        }
+    }
+
+    // 2. Fetch API
+    try {
+        const validHeaders: any = { 'x-apisports-key': API_KEY };
+        if (API_HOST?.includes('rapidapi')) {
+            validHeaders['x-rapidapi-host'] = API_HOST;
+            validHeaders['x-rapidapi-key'] = API_KEY;
+        }
+
+        const response = await axios.get(`${BASE_URL}${endpoint}`, {
+            params,
+            headers: validHeaders
+        });
+
+        const data = response.data.response;
+
+        // 3. Save Cache
+        if (data && redis) { // Store 'response' or 'response.response'? usually the array is passed as T
+            // API-Sports returns { get:..., parameters:..., errors:..., results:..., paging:..., response: ... }
+            // We generally just want 'response' part.
+            await redis.set(cacheKey, data, { ex: ttlSeconds });
+        }
+
+        return data as T;
+    } catch (error: any) {
+        console.error(`API-Sports Rich Fetch Error (${endpoint}):`, error.message);
+        return null;
+    }
+}
+
+// --- NEW PRO FETCH METHODS ---
+
+// Helper interfaces for wrappers
+interface OddsResponse {
+    league: any;
+    fixture: any;
+    update: string;
+    bookmakers: MarketOdds[];
+}
+
+interface PlayerStatsResponse {
+    team: { id: number; name: string; logo: string };
+    players: PlayerStats[];
+}
+
+export const fetchMatchStats = async (fixtureId: number, forceRefresh = false): Promise<TeamMatchStats[] | null> => {
+    return fetchFromApiRich<TeamMatchStats[]>(
+        "/fixtures/statistics",
+        { fixture: fixtureId },
+        "fixtures:stats",
+        3600, // 1 hour (stats might update post-game corrections, but 1h is fine usually)
+        forceRefresh
+    );
+};
+
+export const fetchMatchLineups = async (fixtureId: number, forceRefresh = false): Promise<TeamLineup[] | null> => {
+    return fetchFromApiRich<TeamLineup[]>(
+        "/fixtures/lineups",
+        { fixture: fixtureId },
+        "fixtures:lineups",
+        900, // 15 mins (critical for pre-match)
+        forceRefresh
+    );
+};
+
+export const fetchInjuries = async (fixtureId: number, forceRefresh = false): Promise<Injury[] | null> => {
+    return fetchFromApiRich<Injury[]>(
+        "/injuries",
+        { fixture: fixtureId },
+        "fixtures:injuries",
+        1800, // 30 mins
+        forceRefresh
+    );
+};
+
+export const fetchPlayerStats = async (fixtureId: number, forceRefresh = false): Promise<PlayerStatsResponse[] | null> => {
+    return fetchFromApiRich<PlayerStatsResponse[]>(
+        "/fixtures/players",
+        { fixture: fixtureId },
+        "fixtures:players",
+        3600, // 1 hour
+        forceRefresh
+    );
+};
+
+export const fetchOdds = async (fixtureId: number, forceRefresh = false): Promise<MarketOdds[] | null> => {
+    // Bet365 (ID 1) is usually the standard reference
+    const data = await fetchFromApiRich<OddsResponse[]>(
+        "/odds",
+        { fixture: fixtureId, bookmaker: 1 },
+        "fixtures:odds",
+        300, // 5 mins (odds change fast)
+        forceRefresh
+    );
+
+    if (data && data.length > 0) {
+        return data[0].bookmakers;
+    }
+    return null;
 };
 
 // Helper to determine if a match is finished based on API-Sports statuses
@@ -241,17 +444,18 @@ const analyzeFixtures = async (fixtures: Fixture[], forceRefresh: boolean = fals
 
             CRITICAL INSTRUCTIONS:
             1. **USE THE ENRICHED DATA**: You now have access to REAL statistics including:
-               - Team performance metrics (wins, losses, goals scored/conceded)
-               - Expected Goals (xG) data from recent matches
-               - Bookmaker odds for market comparison
-               - Venue, weather, and referee information
-               - Match events and statistics
+               - **CONFIRMED LINEUPS** & Formations (Adjust for tactical mismatches).
+               - **CRITICAL INJURIES**: If key players are missing (as listed in Injury Report), penalize the team heavily.
+               - **SHARP MARKET MOVES**: Pay attention to "Odds CRASHING" alerts - this indicates massive sharp money.
+               - Team performance metrics & xG.
             
-            2. **Parse NEWS HEADLINES**: If a key player (Top Scorer/Captain/Playmaker) is missing, penalize the team by 15-20% immediately.
+            2. **Parse NEWS HEADLINES & INJURIES**: 
+               - If a Top Scorer/Captain/Playmaker is listed in the **INJURY REPORT**, penalize the team by 20% immediately.
+               - If the Market is moving AGAINST a team (Odds drifting up), trust the market over the stats.
             
-            3. **Calculate "True Probability"**: Use the enriched data to calculate accurate probabilities for each outcome (Home/Draw/Away).
+            3. **Calculate "True Probability"**: Use the enriched data (xG, lineups, injuries) to calculate accurate probabilities.
             
-            4. **Identify Value Bets**: Compare your calculated probability against the provided market odds. If your probability suggests better value than the odds imply, increase confidence.
+            4. **Identify Value Bets**: Compare your calculated probability against the provided market odds.
             
             5. **Select the outcome** with the highest confidence relative to risk.
 

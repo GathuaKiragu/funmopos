@@ -689,13 +689,29 @@ export default function DashboardPage() {
                                         </Button>
                                     </div>
                                 ) : (
-                                    <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-4">
-                                        <p className="text-xs text-yellow-500/80 leading-relaxed">
-                                            <strong className="font-black uppercase tracking-wide">Off-Season Period</strong>
-                                            <br />
-                                            Most major leagues are currently inactive. European leagues typically run August-May.
-                                        </p>
-                                    </div>
+                                    (() => {
+                                        // Check if we're in actual off-season (June-July for European leagues)
+                                        const currentMonth = selectedDate.getMonth(); // 0-11
+                                        const isOffSeasonMonth = currentMonth === 5 || currentMonth === 6; // June (5) or July (6)
+
+                                        return isOffSeasonMonth ? (
+                                            <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-4">
+                                                <p className="text-xs text-yellow-500/80 leading-relaxed">
+                                                    <strong className="font-black uppercase tracking-wide">Off-Season Period</strong>
+                                                    <br />
+                                                    Most major leagues are currently inactive. European leagues typically run August-May.
+                                                </p>
+                                            </div>
+                                        ) : (
+                                            <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+                                                <p className="text-xs text-gray-300 leading-relaxed">
+                                                    <strong className="font-black uppercase tracking-wide text-white">No Matches Scheduled</strong>
+                                                    <br />
+                                                    No fixtures are scheduled for <span className="text-yellow-500 font-bold">{isToday(selectedDate) ? "today" : format(selectedDate, "MMMM do")}</span>. Try selecting a different date or check back later.
+                                                </p>
+                                            </div>
+                                        );
+                                    })()
                                 )}
 
                                 <div className="text-left bg-white/5 rounded-xl p-4 border border-white/10">
