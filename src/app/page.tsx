@@ -49,10 +49,11 @@ export default function Home() {
       <header className="fixed top-0 w-full z-50 border-b border-white/5 bg-black/50 backdrop-blur-xl">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="bg-yellow-500 w-8 h-8 rounded-lg flex items-center justify-center">
-              <span className="font-bold text-black text-lg">F</span>
-            </div>
-            <span className="font-bold text-lg tracking-tight text-white">Funmo Tips</span>
+            {/* 
+              User Instructions: 
+              Please save your logo image as "funmo-logo.png" inside the "public" folder.
+            */}
+            <img src="/funmo-logo.png" alt="Funmo Tips" className="h-16 w-auto object-contain" />
           </div>
           <div className="flex items-center gap-4">
             {user ? (
