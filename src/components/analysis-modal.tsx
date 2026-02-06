@@ -96,11 +96,48 @@ export function MatchAnalysisModal({ fixture, trigger }: MatchAnalysisModalProps
                             </p>
                         </div>
 
-                        <div className="mt-3 flex items-center gap-2">
-                            <Brain className="w-4 h-4 text-purple-400" />
-                            <span className="text-xs font-bold text-gray-400">Confidence: <span className="text-white">{confidence}%</span></span>
-                        </div>
                     </div>
+                    <div className="mt-3 flex items-center gap-2">
+                        <Brain className="w-4 h-4 text-purple-400" />
+                        <span className="text-xs font-bold text-gray-400">Winning Chance: <span className="text-white">{confidence}%</span></span>
+                    </div>
+
+
+                    {/* Match Probabilities (if available) */}
+                    {fixture.prediction.probabilities && (
+                        <div className="mb-6 space-y-3">
+                            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest text-center mb-2">Match Probabilities</h4>
+                            <div className="flex items-center gap-1 h-8 rounded-lg overflow-hidden w-full">
+                                <div style={{ width: `${fixture.prediction.probabilities.home}%` }} className="h-full bg-emerald-500 flex items-center justify-center text-[10px] font-bold text-black group relative">
+                                    <span className="hidden group-hover:block absolute bg-black text-white px-2 py-1 rounded -top-8 text-xs">{fixture.homeTeam.name}</span>
+                                    {fixture.prediction.probabilities.home}%
+                                </div>
+                                <div style={{ width: `${fixture.prediction.probabilities.draw}%` }} className="h-full bg-gray-500 flex items-center justify-center text-[10px] font-bold text-white group relative">
+                                    <span className="hidden group-hover:block absolute bg-black text-white px-2 py-1 rounded -top-8 text-xs">Draw</span>
+                                    {fixture.prediction.probabilities.draw}%
+                                </div>
+                                <div style={{ width: `${fixture.prediction.probabilities.away}%` }} className="h-full bg-blue-500 flex items-center justify-center text-[10px] font-bold text-white group relative">
+                                    <span className="hidden group-hover:block absolute bg-black text-white px-2 py-1 rounded -top-8 text-xs">{fixture.awayTeam.name}</span>
+                                    {fixture.prediction.probabilities.away}%
+                                </div>
+                            </div>
+                            <div className="flex justify-between text-[10px] text-gray-500 uppercase font-bold px-1">
+                                <span>{fixture.homeTeam.name}</span>
+                                <span>Draw</span>
+                                <span>{fixture.awayTeam.name}</span>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* H2H Summary (if available) */}
+                    {fixture.prediction.h2h && (
+                        <div className="mb-6 p-4 bg-white/5 rounded-xl border border-white/5">
+                            <h4 className="text-xs font-bold text-yellow-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                <TrendingUp className="w-3 h-3" /> Head to Head
+                            </h4>
+                            <p className="text-xs text-gray-300 leading-relaxed italic">{fixture.prediction.h2h}</p>
+                        </div>
+                    )}
 
                     {/* Detailed Analysis Sections */}
                     <div className="space-y-6">
@@ -138,6 +175,6 @@ export function MatchAnalysisModal({ fixture, trigger }: MatchAnalysisModalProps
                     </Button>
                 </div>
             </DialogContent>
-        </Dialog>
+        </Dialog >
     );
 }

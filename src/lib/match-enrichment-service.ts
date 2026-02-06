@@ -274,8 +274,8 @@ export function buildEnrichedContext(enrichedData: EnrichedData | undefined): st
         const { home, away } = enrichedData.lineups;
         if (home && away) {
             parts.push(`**Confimed Lineups:**`);
-            parts.push(`- Home (${home.formation}): ${home.startXI.map(p => p.player.name).join(', ')}`);
-            parts.push(`- Away (${away.formation}): ${away.startXI.map(p => p.player.name).join(', ')}`);
+            parts.push(`- Home (${home.formation}): ${(home.startXI || []).map(p => p.player.name).join(', ')}`);
+            parts.push(`- Away (${away.formation}): ${(away.startXI || []).map(p => p.player.name).join(', ')}`);
         }
     }
 

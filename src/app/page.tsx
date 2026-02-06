@@ -418,7 +418,8 @@ export default function Home() {
             <Link href="/terms" className="hover:text-white">Terms</Link>
             <Link href="/privacy" className="hover:text-white">Privacy</Link>
             <Link href="/disclaimer" className="hover:text-white">Disclaimer</Link>
-            <Link href="/contact" className="hover:text-white text-yellow-500">Contact Us</Link>
+            <a href="https://t.me/+0PA3S6EyW_MzMjY8" target="_blank" rel="noopener noreferrer" className="hover:text-white text-blue-400 font-bold">Join Telegram</a>
+            <a href="mailto:hello@funmo.africa" className="hover:text-white text-yellow-500">Support: hello@funmo.africa</a>
           </div>
           <p className="max-w-2xl mx-auto mb-4 leading-relaxed">
             <span className="font-semibold text-gray-400">Responsible Gambling:</span> Funmo Tips is an informational platform. We do not accept bets.
@@ -491,7 +492,7 @@ function Card({ league, match, date, prediction, confidence, reasoning, status, 
         {isNoBet ? (
           <span className="text-xs font-bold text-red-500 border border-red-500/20 px-2 py-1 rounded bg-red-500/10">RISK DETECTED</span>
         ) : (
-          <span className="text-xs font-bold text-emerald-500">{confidence}% Conf.</span>
+          <span className="text-xs font-bold text-emerald-500">{confidence}% Winning Chance</span>
         )}
       </div>
 

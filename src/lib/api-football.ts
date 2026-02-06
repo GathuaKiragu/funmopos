@@ -58,6 +58,12 @@ export interface Fixture {
         type: "result" | "goals" | "score";
         isRisky: boolean;
         requiresTier: "free" | "basic" | "standard" | "vip";
+        probabilities?: {
+            home: number;
+            draw: number;
+            away: number;
+        };
+        h2h?: string;
     } | null;
     // New Pro Data Points
     stats?: {
@@ -491,7 +497,7 @@ const analyzeFixtures = async (fixtures: Fixture[], forceRefresh: boolean = fals
             - **requiresTier**: "vip" for confidence >= 90%, "standard" for 80-89%, "basic" for 70-79%, "free" otherwise.
 
             Return strictly a JSON array:
-            [{"id": number, "picked": string, "confidence": number, "reasoning": string[], "analysis": string, "type": "result"|"goals"|"score", "isRisky": boolean, "requiresTier": string}]
+            [{"id": number, "picked": string, "confidence": number, "reasoning": string[], "analysis": string, "type": "result"|"goals"|"score", "isRisky": boolean, "requiresTier": string, "probabilities": {"home": number, "draw": number, "away": number}, "h2h": string}]
         `;
 
         try {
@@ -509,11 +515,23 @@ const analyzeFixtures = async (fixtures: Fixture[], forceRefresh: boolean = fals
                 }
             });
 
-            const content = response.data.choices[0].message.content;
-            const predictions = JSON.parse(content);
+            let predictionArray: any[] = [];
+            try {
+                let content = response.data.choices[0].message.content.trim();
+                // Clean Markdown code blocks if present
+                if (content.startsWith("```")) {
+                    content = content.replace(/^```json\s?/, "").replace(/^```\s?/, "").replace(/```$/, "");
+                }
 
-            // Handle if AI returns { "predictions": [...] } instead of just array
-            const predictionArray = Array.isArray(predictions) ? predictions : (predictions.predictions || []);
+                const predictions = JSON.parse(content);
+                // Handle if AI returns { "predictions": [...] } instead of just array
+                predictionArray = Array.isArray(predictions) ? predictions : (predictions.predictions || []);
+            } catch (parseError) {
+                console.error("AI JSON Parse Error:", parseError);
+                console.error("Raw Content:", response.data.choices[0].message.content);
+                // Fallback: Empty array, loop will skip predictions but not crash
+                predictionArray = [];
+            }
 
             const analyzedChunk = chunk.map(fixture => {
                 const pred = predictionArray.find((p: any) => p.id === fixture.id);
@@ -574,7 +592,9 @@ const analyzeFixtures = async (fixtures: Fixture[], forceRefresh: boolean = fals
                             analysis: pred.analysis || "Full analysis pending.",
                             type: pred.type,
                             isRisky: finalIsRisky,
-                            requiresTier: finalTier
+                            requiresTier: finalTier,
+                            probabilities: pred.probabilities,
+                            h2h: pred.h2h
                         }
                     };
                 }
