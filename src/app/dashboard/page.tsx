@@ -434,7 +434,7 @@ export default function DashboardPage() {
                     <div className="flex items-center gap-3">
                         <InstallAppButton />
                         <a
-                            href="https://t.me/+0PA3S6EyW_MzMjY8"
+                            href="https://t.me/+0boSnltP4rk4ZjM8"
                             target="_blank"
                             rel="noopener noreferrer"
                             className="hidden md:flex items-center gap-2 text-sm font-bold text-white bg-[#229ED9] hover:bg-[#1e8dbf] px-4 py-2 rounded-xl shadow-lg shadow-blue-500/20 transition-all hover:scale-105 active:scale-95 animate-pulse-subtle"

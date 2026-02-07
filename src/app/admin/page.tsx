@@ -6,6 +6,7 @@ import { Loader2, Lock, Users, Database, Activity, TrendingUp, RefreshCw, LogOut
 import { useRouter } from "next/navigation";
 import BulkSMSPanel from "@/components/admin/bulk-sms-panel";
 import UserManagementPanel from "@/components/admin/user-management-panel";
+import AutomationPanel from "@/components/admin/automation-panel";
 
 interface Stats {
     users: { total: number; verified: number; unverified: number };
@@ -312,9 +313,13 @@ export default function AdminPage() {
                     </div>
                 </div>
 
-                {/* Communications Section - Bulk SMS */}
                 <div className="bg-white/5 border border-white/10 rounded-xl p-6 backdrop-blur-sm">
                     <BulkSMSPanel />
+                </div>
+
+                {/* Automation Control */}
+                <div className="bg-white/5 border border-white/10 rounded-xl p-6 backdrop-blur-sm">
+                    <AutomationPanel />
                 </div>
 
                 {/* Stats Grid */}

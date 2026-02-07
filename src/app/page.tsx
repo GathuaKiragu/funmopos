@@ -419,7 +419,7 @@ export default function Home() {
             <Link href="/terms" className="hover:text-white">Terms</Link>
             <Link href="/privacy" className="hover:text-white">Privacy</Link>
             <Link href="/disclaimer" className="hover:text-white">Disclaimer</Link>
-            <a href="https://t.me/+0PA3S6EyW_MzMjY8" target="_blank" rel="noopener noreferrer" className="hover:text-white text-blue-400 font-bold">Join Telegram</a>
+            <a href="https://t.me/+0boSnltP4rk4ZjM8" target="_blank" rel="noopener noreferrer" className="hover:text-white text-blue-400 font-bold">Join Telegram</a>
             <a href="mailto:hello@funmo.africa" className="hover:text-white text-yellow-500">Support: hello@funmo.africa</a>
           </div>
           <p className="max-w-2xl mx-auto mb-4 leading-relaxed">

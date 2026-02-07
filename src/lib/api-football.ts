@@ -375,7 +375,7 @@ const fetchTeamNews = async (home: string, away: string): Promise<string> => {
     try {
         const query = `${home} vs ${away} team news injuries`;
         const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-GB&gl=GB&ceid=GB:en`; // targeting UK english for football coverage
-        const { data } = await axios.get(url);
+        const { data } = await axios.get(url, { timeout: 5000 }); // Add timeout to prevent hanging
 
         // Simple regex to extract titles (lighter than xml parser)
         const items = data.match(/<item>[\s\S]*?<\/item>/g) || [];
@@ -385,8 +385,13 @@ const fetchTeamNews = async (home: string, away: string): Promise<string> => {
         }).filter(Boolean);
 
         return headlines.join(". ");
-    } catch (e) {
-        console.warn(`News fetch failed for ${home} vs ${away}`);
+    } catch (e: any) {
+        // Only log if it's a major/unusual error, don't spam for routine fetch failures on obscure teams
+        if (e.response?.status === 429) {
+            console.warn(`[News API] Rate limited by Google News`);
+        } else if (e.code === 'ECONNABORTED') {
+            // Silently skip timeouts
+        }
         return "";
     }
 };
