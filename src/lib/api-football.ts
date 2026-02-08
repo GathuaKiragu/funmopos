@@ -1,4 +1,4 @@
-import { format, subDays, addDays, isPast, addHours } from "date-fns";
+import { format, subDays, addDays, isPast, addHours, isToday } from "date-fns";
 import { db } from "@/lib/firebase";
 import {
     collection,
@@ -681,6 +681,36 @@ export const getFixtures = async (
 ): Promise<Fixture[]> => {
     const dateKey = format(date, "yyyy-MM-dd");
     const nairobiNow = getNairobiNow();
+    let fixtures: Fixture[] = [];
+
+    const isStale = (fixtures: Fixture[]) => {
+        if (fixtures.length === 0) return true;
+        const now = getNairobiNow();
+
+        const statusStale = fixtures.some(f => {
+            const matchDate = new Date(f.date);
+            const startedLongAgo = matchDate.getTime() < (now.getTime() - (150 * 60000));
+            const isUnfinished = !finishedStates.includes(f.status.short);
+            return startedLongAgo && isUnfinished;
+        });
+
+        const analysisStale = fixtures.some(f => {
+            const matchDate = new Date(f.date);
+            const isFuture = matchDate > now;
+            const hasPrediction = !!f.prediction;
+            const missingAnalysis = !f.prediction?.analysis;
+            return isFuture && hasPrediction && missingAnalysis;
+        });
+
+        const nairobiToday = format(now, "yyyy-MM-dd");
+        const missingPredictions = fixtures.some(f => {
+            const matchDateKey = format(new Date(f.date), "yyyy-MM-dd");
+            const isTodayOrFuture = matchDateKey >= nairobiToday;
+            return isTodayOrFuture && isCoreLeague(f.league.name) && !f.prediction;
+        });
+
+        return statusStale || analysisStale || missingPredictions;
+    };
 
     // 1. Try Redis (L1 Cache)
     const redisKey = `fixtures:${sport}:${dateKey}`;
@@ -688,8 +718,14 @@ export const getFixtures = async (
         try {
             const cached = await redis?.get<Fixture[]>(redisKey);
             if (cached && cached.length > 0) {
-                console.log(`[Redis Hit] Serving ${cached.length} ${sport} fixtures for ${dateKey}`);
-                return cached;
+                // Check if cached data is stale before returning
+                if (isStale(cached)) {
+                    console.log(`[Redis Hit] Data stale for ${dateKey}, proceeding to refresh...`);
+                    fixtures = cached; // Seed with cached data and proceed to refresh logic
+                } else {
+                    console.log(`[Redis Hit] Serving ${cached.length} ${sport} fixtures for ${dateKey}`);
+                    return cached;
+                }
             }
         } catch (err) {
             console.error("Redis Read Error", err);
@@ -697,7 +733,6 @@ export const getFixtures = async (
     }
 
     // 2. Try Firestore Cache (Skip if forceRefresh)
-    let fixtures: Fixture[] = [];
     if (!forceRefresh) {
         try {
             const q = query(
@@ -723,36 +758,6 @@ export const getFixtures = async (
         }
     }
 
-    // 2. Cache Miss or Stale Detection -> Real API
-    const isStale = (fixtures: Fixture[]) => {
-        // If no fixtures, obviously not stale (it's a miss)
-        if (fixtures.length === 0) return true;
-
-        const now = getNairobiNow();
-
-        // Check for matches that should have finished but are still TBD or NS
-        const statusStale = fixtures.some(f => {
-            const matchDate = new Date(f.date);
-            // If match started more than 2.5 hours ago but isn't finished
-            const startedLongAgo = matchDate.getTime() < (now.getTime() - (150 * 60000));
-            const isUnfinished = !finishedStates.includes(f.status.short);
-            return startedLongAgo && isUnfinished;
-        });
-
-        // NEW: Check if we are missing the 'analysis' field for upcoming detailed views
-        // This ensures old cached predictions get upgraded to the new format
-        const analysisStale = fixtures.some(f => {
-            const matchDate = new Date(f.date);
-            const isFuture = matchDate > now;
-            const hasPrediction = !!f.prediction;
-            const missingAnalysis = !f.prediction?.analysis;
-
-            // Only force refresh if it's a future game with a prediction but NO analysis
-            return isFuture && hasPrediction && missingAnalysis;
-        });
-
-        return statusStale || analysisStale;
-    };
 
     if (fixtures.length === 0 || forceRefresh || isStale(fixtures)) {
         console.log(`[Fetch Triggered] Reason: ${fixtures.length === 0 ? 'Cache Miss' : forceRefresh ? 'Force Refresh' : 'Stale Detected'} for ${sport} on ${dateKey}`);
@@ -761,13 +766,40 @@ export const getFixtures = async (
         // If we HAVE fixtures but they are stale, and we are NOT in a cron job (forceRefresh is false),
         // we return the stale fixtures now and trigger the update in the background.
         if (fixtures.length > 0 && !forceRefresh) {
-            console.log(`[SWR] Serving stale data for ${dateKey} while refreshing in background...`);
-            // We return now, but we don't 'await' the fetch/analyze block.
-            // Note: In Next.js Server Components / API Routes, unawaited promises can be tricky
-            // if the serverless function exits immediately. 
-            // However, for this project, serving stale is better than a 30s delay.
-            // A dedicated cron will handle the actual deep refresh.
-            return fixtures;
+            const nairobiToday = format(getNairobiNow(), "yyyy-MM-dd");
+            const hasMissingCoreToday = fixtures.some(f => format(new Date(f.date), "yyyy-MM-dd") === nairobiToday && isCoreLeague(f.league.name) && !f.prediction);
+
+            if (!hasMissingCoreToday) {
+                console.log(`[SWR] Serving existing data for ${dateKey} while refreshing ${sport} in background...`);
+
+                (async () => {
+                    try {
+                        const rawFixtures = await fetchFromApi(date, sport);
+                        if (rawFixtures && rawFixtures.length > 0) {
+                            const analyzed = await analyzeFixtures(rawFixtures, false);
+
+                            const batch = writeBatch(db);
+                            analyzed.forEach(fixture => {
+                                const docRef = doc(db, "fixtures", `${sport}-${dateKey}-${fixture.id}`);
+                                batch.set(docRef, { ...fixture, dateKey, socialPosted: fixture.socialPosted ?? false }, { merge: true });
+                            });
+                            await batch.commit();
+
+                            if (redis) {
+                                const ttl = isToday(date) || date > new Date() ? 600 : 86400;
+                                await redis.set(`fixtures:${sport}:${dateKey}`, analyzed, { ex: ttl });
+                            }
+                            console.log(`[SWR Complete] Refreshed ${analyzed.length} ${sport} fixtures for ${dateKey}`);
+                        }
+                    } catch (err) {
+                        console.error("[SWR Refresh Error]", err);
+                    }
+                })();
+
+                return fixtures;
+            } else {
+                console.log(`[Blocking Sync] Missing today's core predictions. Forcing refresh for ${dateKey}...`);
+            }
         }
 
         const rawFixtures = await fetchFromApi(date, sport);
@@ -868,21 +900,63 @@ export const syncAllFixtures = async (days: number = 7, startOffset: number = 0,
         const isTodaySync = i === 0;
         const shouldDeepSync = analyzeObscure || isTodaySync;
 
-        const matchesToAnalyze = shouldDeepSync ? raw : raw.filter(f => isCoreLeague(f.league.name));
-        const matchesToSkip = shouldDeepSync ? [] : raw.filter(f => !isCoreLeague(f.league.name));
+        // 3. DELTA CHECK: Skip matches already analyzed in Firestore
+        // This saves API quota and prevents resetting socialPosted status.
+        const fixturesRef = collection(db, "fixtures");
+        const existingDocs = await getDocs(query(fixturesRef, where("dateKey", "==", dateKey)));
+        const existingMap = new Map();
+        existingDocs.forEach(d => existingMap.set(d.data().id, d.data()));
 
-        console.log(`[Sync] ${dateKey} (Offset: ${i}) | Mode: ${shouldDeepSync ? 'DEEP' : 'PRIORITY'}. Analyzing ${matchesToAnalyze.length} matches...`);
+        const matchesToAnalyze = (shouldDeepSync ? raw : raw.filter(f => isCoreLeague(f.league.name)))
+            .filter(f => {
+                const existing = existingMap.get(f.id);
+                // Skip if already has prediction AND it's not today (today we might re-sync for scores)
+                // But only SKIP AI if prediction is present.
+                if (existing?.prediction && !shouldDeepSync) return false;
+                // If it's today, we still want to update scores, but maybe skip AI analysis if prediction exists
+                if (existing?.prediction) return false;
+                return true;
+            });
 
-        // 3. Analyze matches (chunked & throttled)
+        const matchesToSkip = (shouldDeepSync ? [] : raw.filter(f => !isCoreLeague(f.league.name)))
+            .filter(f => !existingMap.has(f.id) || !existingMap.get(f.id).prediction);
+
+        console.log(`[Sync] ${dateKey} (Offset: ${i}) | Mode: ${shouldDeepSync ? 'DEEP' : 'PRIORITY'} | Existing: ${existingMap.size} | Delta: ${matchesToAnalyze.length}`);
+
+        // 4. Analyze Delta (chunked & throttled)
         const analyzed = await analyzeFixtures(matchesToAnalyze);
-        const allFixtures = [...analyzed, ...matchesToSkip];
 
-        // 4. Batch Save to Firestore
+        // 5. Merge with raw data for Score Updates
+        // we want to save all fixtures to update scores, but preserve socialPosted
+        const allFixtures = raw.map(f => {
+            const isAnalyzed = analyzed.find(a => a.id === f.id);
+            const existing = existingMap.get(f.id);
+
+            if (isAnalyzed) return isAnalyzed; // New prediction
+            if (existing) {
+                // Return fresh scores + existing prediction + preserved social status
+                return {
+                    ...existing,
+                    ...f, // Overwrite with fresh scores/status from API
+                    prediction: existing.prediction, // Restore prediction
+                    socialPosted: existing.socialPosted ?? false,
+                    socialPostedAt: existing.socialPostedAt
+                };
+            }
+            return f; // New match, no prediction yet
+        });
+
+        // 6. Batch Save to Firestore
         try {
             const batch = writeBatch(db);
             allFixtures.forEach(fixture => {
                 const docRef = doc(db, "fixtures", `football-${dateKey}-${fixture.id}`);
-                batch.set(docRef, { ...fixture, dateKey, sport: "football", socialPosted: fixture.socialPosted ?? false });
+                batch.set(docRef, {
+                    ...fixture,
+                    dateKey,
+                    sport: "football",
+                    socialPosted: fixture.socialPosted ?? false
+                }, { merge: true });
             });
             await batch.commit();
 

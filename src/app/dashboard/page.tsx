@@ -47,7 +47,7 @@ export default function DashboardPage() {
     const [viewMode, setViewMode] = useState<'CORE' | 'ALL' | 'LIVE'>('CORE');
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedLeague, setSelectedLeague] = useState<string>('ALL');
-    const [activeTab, setActiveTab] = useState<'LATEST' | 'HISTORY'>('LATEST');
+    const [activeTab, setActiveTab] = useState<'TODAY' | 'UPCOMING' | 'HISTORY'>('TODAY');
 
     // Scroll ref for date picker
     const dateScrollRef = useRef<HTMLDivElement>(null);
@@ -113,8 +113,13 @@ export default function DashboardPage() {
     }, [selectedDate, selectedSport]);
 
     useEffect(() => {
-        setSelectedLeague('ALL'); // Reset league when switching tabs
-    }, [activeTab]);
+        // Sync tab with selected date
+        if (isToday(selectedDate)) setActiveTab('TODAY');
+        else if (differenceInCalendarDays(selectedDate, new Date()) > 0) setActiveTab('UPCOMING');
+        else setActiveTab('HISTORY');
+
+        setSelectedLeague('ALL'); // Reset league when switching dates
+    }, [selectedDate]);
 
     const handleAnalyzeMatch = async (fixtureId: number, dateKey: string) => {
         toast.promise(
@@ -151,7 +156,7 @@ export default function DashboardPage() {
                 if (confidence <= 85) return false;
                 if (isRisky) return false;
             }
-            if (activeTab === 'LATEST' && isFinished) return false;
+            if ((activeTab === 'TODAY' || activeTab === 'UPCOMING') && isFinished) return false;
 
             // 2. View Mode Filter
             if (viewMode === 'CORE' && !isCoreLeague(f.league.name)) return false;
@@ -601,16 +606,31 @@ export default function DashboardPage() {
                 {/* 2. Header & Filters (Like Screenshot) */}
                 <div className="flex flex-col gap-6">
                     <div className="flex items-center justify-between gap-4">
-                        <div className="flex bg-white/5 p-1 rounded-xl border border-white/10">
+                        <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 overflow-x-auto scrollbar-hide">
                             <button
-                                onClick={() => setActiveTab('LATEST')}
-                                className={`px-6 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'LATEST' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/60'}`}
+                                onClick={() => {
+                                    setActiveTab('TODAY');
+                                    setSelectedDate(new Date());
+                                }}
+                                className={`whitespace-nowrap px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${activeTab === 'TODAY' ? 'bg-white/10 text-white shadow-inner' : 'text-white/40 hover:text-white/60'}`}
                             >
-                                Latest
+                                Today
                             </button>
                             <button
-                                onClick={() => setActiveTab('HISTORY')}
-                                className={`px-6 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'HISTORY' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/60'}`}
+                                onClick={() => {
+                                    setActiveTab('UPCOMING');
+                                    setSelectedDate(addDays(new Date(), 1));
+                                }}
+                                className={`whitespace-nowrap px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${activeTab === 'UPCOMING' ? 'bg-white/10 text-white shadow-inner' : 'text-white/40 hover:text-white/60'}`}
+                            >
+                                Upcoming
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setActiveTab('HISTORY');
+                                    setSelectedDate(subDays(new Date(), 1));
+                                }}
+                                className={`whitespace-nowrap px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${activeTab === 'HISTORY' ? 'bg-white/10 text-white shadow-inner' : 'text-white/40 hover:text-white/60'}`}
                             >
                                 History
                             </button>
