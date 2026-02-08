@@ -10,7 +10,8 @@ import {
     TeamLineup,
     Injury,
     MarketOdds,
-    PlayerStats
+    PlayerStats,
+    isCoreLeague // Add export from api-football
 } from './api-football';
 import { analyzeMotivation, MotivationAnalysis } from './motivation-analysis';
 import { format, subDays } from 'date-fns';
@@ -123,7 +124,16 @@ function extractOdds(oddsData: MarketOdds[] | null): NonNullable<EnrichedData['o
  * @returns Enriched fixture with additional data
  */
 export async function enrichFixture(fixture: Fixture, forceRefresh: boolean = false): Promise<EnrichedFixture> {
+    // SECURITY: Only enrich Core Leagues to save API Quota (429 safeguard)
+    if (!isCoreLeague(fixture.league.name)) {
+        // console.log(`[Match Enrichment] Skipping ${fixture.league.name}: Not a core league.`);
+        return fixture;
+    }
+
     console.log(`[Match Enrichment] Enriching fixture ${fixture.id}: ${fixture.homeTeam.name} vs ${fixture.awayTeam.name}`);
+
+    // PACING: Add a small delay to prevent 429 during large parallel batches
+    await new Promise(resolve => setTimeout(resolve, 200));
 
     try {
         // Parallel Fetching of Pro Data

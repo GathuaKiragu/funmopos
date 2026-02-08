@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { syncAllFixtures } from "@/lib/api-football";
+import { getQuotaStatus } from "@/lib/api-football";
 
 async function verifyAdmin() {
     const cookieStore = await cookies();
@@ -8,25 +8,16 @@ async function verifyAdmin() {
     return !!session;
 }
 
-export async function POST(request: Request) {
+export async function GET() {
     try {
         const isAdmin = await verifyAdmin();
         if (!isAdmin) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const { days = 2, deep = false } = await request.json();
-
-        console.log(`[API] Manual Sync Triggered for ${days} days (Deep: ${deep})`);
-        await syncAllFixtures(days, 0, deep);
-
-        return NextResponse.json({
-            message: "Sync successful",
-            analyzedDays: days,
-            timestamp: new Date().toISOString()
-        });
+        const quota = getQuotaStatus();
+        return NextResponse.json(quota);
     } catch (error: any) {
-        console.error("Sync Error:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getFixtures, getNairobiNow } from '@/lib/api-football';
 import { sendTelegramMessage } from '@/lib/telegram-service';
 import { sendBulkSMS, formatPhoneNumber } from '@/lib/sms-service';
+import { postToX, postToFacebook } from '@/lib/social-media-service';
 import { getAdminDb } from '@/lib/firebase-admin';
 import { format } from 'date-fns';
 
@@ -95,6 +96,26 @@ export async function GET(request: Request) {
             telegramResult = { success: true };
         }
 
+        // 6. Format Social Media Message (Shorter for X)
+        const socialMessage = `🔥 Today's Top Betting Picks are Live! 🔥\n\n` +
+            topPicks.map(p => `⚽ ${p.homeTeam.name} vs ${p.awayTeam.name}`).join('\n') +
+            `\n\nCheck full analysis here: ${SITE_URL}\n\n#BettingTips #Football #FunmoTips`;
+
+        // 7. Send Social Media
+        let xResult = { success: false, error: 'Test Mode' };
+        let fbResult = { success: false, error: 'Test Mode' };
+
+        if (!testMode) {
+            const xRes = await postToX(socialMessage);
+            const fbRes = await postToFacebook(socialMessage);
+            xResult = { success: xRes.success, error: xRes.error || '' };
+            fbResult = { success: fbRes.success, error: fbRes.error || '' };
+        } else {
+            console.log('[Test Mode] Social Media Message:\n', socialMessage);
+            xResult = { success: true, error: '' };
+            fbResult = { success: true, error: '' };
+        }
+
         // 6. Fetch Users for SMS
         const db = getAdminDb();
         const usersSnapshot = await db.collection('users').get();
@@ -156,6 +177,10 @@ export async function GET(request: Request) {
         return NextResponse.json({
             success: true,
             telegram: telegramResult.success,
+            social: {
+                x: xResult.success,
+                facebook: fbResult.success
+            },
             sms: {
                 totalRecipients: usersToNotify.length,
                 sent: smsResult.totalSent,

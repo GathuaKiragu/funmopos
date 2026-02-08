@@ -139,6 +139,46 @@ const DEEPSEEK_URL = "https://api.deepseek.com/chat/completions";
 // Expanded: CL (Champions League), EL (Europa League), EC (Euro), WC (World Cup), CLI (Libertadores), BSA (Brazil Serie A)
 const COMPETITIONS = ["PL", "ELC", "PD", "SA", "BL1", "FL1", "DED", "PPL", "CL", "EL", "EC", "WC", "CLI", "BSA"];
 
+// CORE LEAGUES for automatic priority analysis
+const CORE_LEAGUE_NAMES = [
+    "Premier League", "Championship", "La Liga", "Serie A", "Bundesliga", "Ligue 1",
+    "Eredivisie", "Primeira Liga", "Champions League", "Europa League", "Euro",
+    "World Cup", "Copa Libertadores", "Serie A (Brazil)", "Major League Soccer",
+    "FA Cup", "Copa del Rey", "DFB Pokal", "Coppa Italia"
+];
+
+export const isCoreLeague = (leagueName: string) => {
+    return CORE_LEAGUE_NAMES.some(core => leagueName.toLowerCase().includes(core.toLowerCase()));
+};
+
+// --- QUOTA & BILLING TRACKING ---
+// Simple in-memory global state to handle 402/429 errors gracefully
+let QUOTA_STATUS = {
+    deepseek_billing_empty: false,
+    api_sports_rate_limited: false,
+    last_402_at: 0,
+    last_429_at: 0,
+    api_sports_remaining: -1, // -1 means unknown
+    api_sports_limit: -1,
+    api_sports_used: 0
+};
+
+const checkQuotas = () => {
+    const now = Date.now();
+    // Reset status after 1 hour of "timeout"
+    if (QUOTA_STATUS.deepseek_billing_empty && (now - QUOTA_STATUS.last_402_at > 3600000)) {
+        QUOTA_STATUS.deepseek_billing_empty = false;
+        console.log("[Quota] DeepSeek billing cooldown expired.");
+    }
+    if (QUOTA_STATUS.api_sports_rate_limited && (now - QUOTA_STATUS.last_429_at > 3600000)) {
+        QUOTA_STATUS.api_sports_rate_limited = false;
+        console.log("[Quota] API-Sports rate-limit cooldown expired.");
+    }
+    return QUOTA_STATUS;
+};
+
+export const getQuotaStatus = () => checkQuotas();
+
 /**
  * Returns the current date/time adjusted to Nairobi (EAT, UTC+3).
  */
@@ -268,6 +308,12 @@ async function fetchFromApiRich<T>(
     }
 
     // 2. Fetch API
+    const quotas = checkQuotas();
+    if (quotas.api_sports_rate_limited) {
+        // console.warn(`[Quota] Skipping ${endpoint} due to API-Sports rate limit cooldown.`);
+        return null;
+    }
+
     try {
         const validHeaders: any = { 'x-apisports-key': API_KEY };
         if (API_HOST?.includes('rapidapi')) {
@@ -280,6 +326,15 @@ async function fetchFromApiRich<T>(
             headers: validHeaders
         });
 
+        // --- CAPTURE QUOTA HEADERS ---
+        const remaining = response.headers['x-ratelimit-requests-remaining'];
+        const limit = response.headers['x-ratelimit-requests-limit'];
+        const used = response.headers['x-ratelimit-requests-used'];
+
+        if (remaining !== undefined) QUOTA_STATUS.api_sports_remaining = parseInt(remaining as string);
+        if (limit !== undefined) QUOTA_STATUS.api_sports_limit = parseInt(limit as string);
+        if (used !== undefined) QUOTA_STATUS.api_sports_used = parseInt(used as string);
+
         const data = response.data.response;
 
         // 3. Save Cache
@@ -291,7 +346,13 @@ async function fetchFromApiRich<T>(
 
         return data as T;
     } catch (error: any) {
-        console.error(`API-Sports Rich Fetch Error (${endpoint}):`, error.message);
+        if (error.response?.status === 429) {
+            console.error(`[CRITICAL] API-Sports Rate Limit (429) at ${endpoint}. Entering 1-hour cooldown.`);
+            QUOTA_STATUS.api_sports_rate_limited = true;
+            QUOTA_STATUS.last_429_at = Date.now();
+        } else {
+            console.error(`API-Sports Rich Fetch Error (${endpoint}):`, error.message);
+        }
         return null;
     }
 }
@@ -398,8 +459,14 @@ const fetchTeamNews = async (home: string, away: string): Promise<string> => {
 
 
 // AI Analysis with DeepSeek (Enhanced with Football Highlights API)
-const analyzeFixtures = async (fixtures: Fixture[], forceRefresh: boolean = false): Promise<Fixture[]> => {
+export const analyzeFixtures = async (fixtures: Fixture[], forceRefresh: boolean = false): Promise<Fixture[]> => {
     if (!DEEPSEEK_KEY || fixtures.length === 0) return fixtures;
+
+    const quotas = checkQuotas();
+    if (quotas.deepseek_billing_empty) {
+        console.warn("[Quota] Skipping AI analysis: DeepSeek Billing empty.");
+        return fixtures; // Return without predictions
+    }
 
     // Implementation of Chunking: DeepSeek might fail with too many matches in one prompt
     const CHUNK_SIZE = 20;
@@ -412,177 +479,155 @@ const analyzeFixtures = async (fixtures: Fixture[], forceRefresh: boolean = fals
 
     const allAnalyzedFixtures: Fixture[] = [];
 
-    for (let i = 0; i < fixtureChunks.length; i++) {
-        const chunk = fixtureChunks[i];
-        console.log(`[AI Analysis] Processing chunk ${i + 1}/${fixtureChunks.length} (${chunk.length} matches)...`);
+    // --- CONCURRENCY THROTTLING ---
+    // We process chunks in batches of 5 to avoid hitting API rate limits
+    // even if we have 1000+ matches (50+ chunks)
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < fixtureChunks.length; i += BATCH_SIZE) {
+        const batch = fixtureChunks.slice(i, i + BATCH_SIZE);
+        console.log(`[AI Analysis] Processing batch ${Math.floor(i / BATCH_SIZE) + 1} (${batch.length} chunks)...`);
 
-        // STEP 1: Enrich fixtures with Football Highlights API data
-        console.log(`[AI Analysis] Enriching chunk ${i + 1} with Football Highlights API data...`);
-        const { enrichFixtures, buildEnrichedContext } = await import('./match-enrichment-service');
-        const enrichedChunk = await enrichFixtures(chunk, 5, forceRefresh); // Max 5 concurrent API calls
+        const chunkPromises = batch.map(async (chunk, chunkIdx) => {
+            const globalIdx = i + chunkIdx;
+            console.log(`[AI Analysis] Processing chunk ${globalIdx + 1}/${fixtureChunks.length} (${chunk.length} matches)...`);
 
-        // STEP 2: Fetch News for matches in this chunk in parallel
-        const fixturesWithNewsAndData = await Promise.all(enrichedChunk.map(async (f) => {
-            const news = await fetchTeamNews(f.homeTeam.name, f.awayTeam.name);
-            return {
-                ...f,
-                newsContext: news
-            };
-        }));
-
-        // STEP 3: Build enriched data for AI prompt
-        const fixturesData = fixturesWithNewsAndData.map(f => ({
-            id: f.id,
-            match: `${f.homeTeam.name} vs ${f.awayTeam.name}`,
-            league: f.league.name,
-            news_headlines: f.newsContext || "No recent news found.",
-            enriched_data: buildEnrichedContext(f.enrichedData)
-        }));
-
-        const prompt = `
-            You are the world's most advanced football betting algorithm, calibrated for "sharp" money. 
-            Your goal is NOT just to pick winners, but to identify POSITIVE EXPECTED VALUE (+EV) based on genuine probability vs market perception.
-
-            INPUT DATA:
-            ${JSON.stringify(fixturesData, null, 2)}
-
-            MODELS TO APPLY:
-            1. **Poisson Distribution**: Estimate Expected Goals (xG) for both teams based on recent attack/defense ratings.
-            2. **Elo/Power Ratings**: Compare raw squad strength.
-            3. **Contextual Impact**: Adjust for "Must Win" situations, severe injuries (using the provided news), and Hostile Atmosphere.
-            4. **Variance Analysis**: If a result relies on luck (e.g., a lucky 1-0 win streak), REGRESS it to the mean.
-            5. **Market Efficiency**: Compare your probability against the provided bookmaker odds to identify value.
-
-            CRITICAL INSTRUCTIONS:
-            1. **USE THE ENRICHED DATA**: You now have access to REAL statistics including:
-               - **CONFIRMED LINEUPS** & Formations (Adjust for tactical mismatches).
-               - **CRITICAL INJURIES**: If key players are missing (as listed in Injury Report), penalize the team heavily.
-               - **SHARP MARKET MOVES**: Pay attention to "Odds CRASHING" alerts - this indicates massive sharp money.
-               - Team performance metrics & xG.
-            
-            2. **Parse NEWS HEADLINES & INJURIES**: 
-               - If a Top Scorer/Captain/Playmaker is listed in the **INJURY REPORT**, penalize the team by 20% immediately.
-               - If the Market is moving AGAINST a team (Odds drifting up), trust the market over the stats.
-            
-            3. **Calculate "True Probability"**: Use the enriched data (xG, lineups, injuries) to calculate accurate probabilities.
-            
-            4. **Identify Value Bets**: Compare your calculated probability against the provided market odds.
-            
-            5. **Select the outcome** with the highest confidence relative to risk.
-
-            6. **DATA AVAILABILITY CHECK**: 
-               - If \`enriched_data\` contains "No enriched data available", **YOU MUST NOT** assign confidence > 70%.
-               - Mark \`isRisky: true\` automatically if data is missing.
-               - Explicitly state "Limited data availability" in the analysis.
-
-            OUTPUT REQUIREMENTS:
-            - **picked**: The specific market (e.g., "Arsenal Win", "Over 2.5 Goals", "BTTS Yes").
-            - **confidence**: A precise integer (0-100).
-                - 90-100%: "BANKER" (Requires: Tier 1 League, Lineups Confirmed, Smart Money Agreement).
-                - 80-89%: "High Confidence" (Strong statistical edge, no red flags).
-                - 70-79%: "Medium" (Likely, but some risk).
-                - <70%: "Risky" (Pass or small stake).
-            - **reasoning**: Array of 3 short, punchy, data-driven points (max 15 words each) for the card summary.
-            - **analysis**: A STRUCTURED, 200-WORD ANALYSIS separated by '###' headers.
-                - Format MUST be exactly as follows:
-                ### Overview
-                (2-3 sentences setting the scene, form, and tactical context)
-                
-                ### Key Points
-                (Bullet points of key stats/tactics, e.g.)
-                • Point 1
-                • Point 2
-                • Point 3
-                
-                ### Expectation
-                (Final verdict and prediction reasoning)
-
-            - **type**: "result" | "goals" | "score".
-            - **isRisky**: true if confidence < 75%.
-            - **requiresTier**: "vip" for confidence >= 90%, "standard" for 80-89%, "basic" for 70-79%, "free" otherwise.
-
-            Return strictly a JSON array:
-            [{"id": number, "picked": string, "confidence": number, "reasoning": string[], "analysis": string, "type": "result"|"goals"|"score", "isRisky": boolean, "requiresTier": string, "probabilities": {"home": number, "draw": number, "away": number}, "h2h": string}]
-        `;
-
-        try {
-            const response = await axios.post(DEEPSEEK_URL, {
-                model: "deepseek-chat",
-                messages: [
-                    { role: "system", content: "You are a professional betting analyst with access to real-time statistics. You verify facts and use data-driven analysis before predicting." },
-                    { role: "user", content: prompt }
-                ],
-                response_format: { type: "json_object" }
-            }, {
-                headers: {
-                    'Authorization': `Bearer ${DEEPSEEK_KEY}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            let predictionArray: any[] = [];
             try {
+                // STEP 1: Enrich fixtures with Football Highlights API data
+                const { enrichFixtures, buildEnrichedContext } = await import('./match-enrichment-service');
+                const enrichedChunk = await enrichFixtures(chunk, 5, forceRefresh);
+
+                // STEP 2: Fetch News for matches in this chunk in parallel
+                const fixturesWithNewsAndData = await Promise.all(enrichedChunk.map(async (f) => {
+                    const news = await fetchTeamNews(f.homeTeam.name, f.awayTeam.name);
+                    return { ...f, newsContext: news };
+                }));
+
+                // STEP 3: Build enriched data for AI prompt
+                const fixturesData = fixturesWithNewsAndData.map(f => ({
+                    id: f.id,
+                    match: `${f.homeTeam.name} vs ${f.awayTeam.name}`,
+                    league: f.league.name,
+                    news_headlines: f.newsContext || "No recent news found.",
+                    enriched_data: buildEnrichedContext(f.enrichedData)
+                }));
+
+                const prompt = `
+                You are the world's most advanced football betting algorithm, calibrated for "sharp" money. 
+                Your goal is NOT just to pick winners, but to identify POSITIVE EXPECTED VALUE (+EV) based on genuine probability vs market perception.
+
+                INPUT DATA:
+                ${JSON.stringify(fixturesData, null, 2)}
+
+                MODELS TO APPLY:
+                1. **Poisson Distribution**: Estimate Expected Goals (xG) for both teams based on recent attack/defense ratings.
+                2. **Elo/Power Ratings**: Compare raw squad strength.
+                3. **Contextual Impact**: Adjust for "Must Win" situations, severe injuries (using the provided news), and Hostile Atmosphere.
+                4. **Variance Analysis**: If a result relies on luck (e.g., a lucky 1-0 win streak), REGRESS it to the mean.
+                5. **Market Efficiency**: Compare your probability against the provided bookmaker odds to identify value.
+
+                CRITICAL INSTRUCTIONS:
+                1. **USE THE ENRICHED DATA**: You now have access to REAL statistics including:
+                   - **CONFIRMED LINEUPS** & Formations (Adjust for tactical mismatches).
+                   - **CRITICAL INJURIES**: If key players are missing (as listed in Injury Report), penalize the team heavily.
+                   - **SHARP MARKET MOVES**: Pay attention to "Odds CRASHING" alerts - this indicates massive sharp money.
+                   - Team performance metrics & xG.
+                
+                2. **Parse NEWS HEADLINES & INJURIES**: 
+                   - If a Top Scorer/Captain/Playmaker is listed in the **INJURY REPORT**, penalize the team by 20% immediately.
+                   - If the Market is moving AGAINST a team (Odds drifting up), trust the market over the stats.
+                
+                3. **Calculate "True Probability"**: Use the enriched data (xG, lineups, injuries) to calculate accurate probabilities.
+                
+                4. **Identify Value Bets**: Compare your calculated probability against the provided market odds.
+                
+                5. **Select the outcome** with the highest confidence relative to risk.
+
+                6. **DATA AVAILABILITY CHECK**: 
+                   - If \`enriched_data\` contains "No enriched data available", **YOU MUST NOT** assign confidence > 70%.
+                   - Mark \`isRisky: true\` automatically if data is missing.
+                   - Explicitly state "Limited data availability" in the analysis.
+
+                OUTPUT REQUIREMENTS:
+                - **picked**: The specific market (e.g., "Arsenal Win", "Over 2.5 Goals", "BTTS Yes").
+                - **confidence**: A precise integer (0-100).
+                    - 90-100%: "BANKER" (Requires: Tier 1 League, Lineups Confirmed, Smart Money Agreement).
+                    - 80-89%: "High Confidence" (Strong statistical edge, no red flags).
+                    - 70-79%: "Medium" (Likely, but some risk).
+                    - <70%: "Risky" (Pass or small stake).
+                - **reasoning**: Array of 3 short, punchy, data-driven points (max 15 words each) for the card summary.
+                - **analysis**: A STRUCTURED, 200-WORD ANALYSIS separated by '###' headers.
+                    - Format MUST be exactly as follows:
+                    ### Overview
+                    (2-3 sentences setting the scene, form, and tactical context)
+                    
+                    ### Key Points
+                    (Bullet points of key stats/tactics, e.g.)
+                    • Point 1
+                    • Point 2
+                    • Point 3
+                    
+                    ### Expectation
+                    (Final verdict and prediction reasoning)
+
+                - **type**: "result" | "goals" | "score".
+                - **isRisky**: true if confidence < 75%.
+                - **requiresTier**: "vip" for confidence >= 90%, "standard" for 80-89%, "basic" for 70-79%, "free" otherwise.
+
+                Return strictly a JSON array:
+                [{"id": number, "picked": string, "confidence": number, "reasoning": string[], "analysis": string, "type": "result"|"goals"|"score", "isRisky": boolean, "requiresTier": string, "probabilities": {"home": number, "draw": number, "away": number}, "h2h": string}]
+            `;
+
+                const response = await axios.post(DEEPSEEK_URL, {
+                    model: "deepseek-chat",
+                    messages: [
+                        { role: "system", content: "You are a professional betting analyst with access to real-time statistics. You verify facts and use data-driven analysis before predicting." },
+                        { role: "user", content: prompt }
+                    ],
+                    response_format: { type: "json_object" }
+                }, {
+                    headers: {
+                        'Authorization': `Bearer ${DEEPSEEK_KEY}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: 30000
+                });
+
                 let content = response.data.choices[0].message.content.trim();
-                // Clean Markdown code blocks if present
                 if (content.startsWith("```")) {
                     content = content.replace(/^```json\s?/, "").replace(/^```\s?/, "").replace(/```$/, "");
                 }
 
                 const predictions = JSON.parse(content);
-                // Handle if AI returns { "predictions": [...] } instead of just array
-                predictionArray = Array.isArray(predictions) ? predictions : (predictions.predictions || []);
-            } catch (parseError) {
-                console.error("AI JSON Parse Error:", parseError);
-                console.error("Raw Content:", response.data.choices[0].message.content);
-                // Fallback: Empty array, loop will skip predictions but not crash
-                predictionArray = [];
-            }
+                const predictionArray = Array.isArray(predictions) ? predictions : (predictions.predictions || []);
 
-            const analyzedChunk = chunk.map(fixture => {
-                const pred = predictionArray.find((p: any) => p.id === fixture.id);
+                return chunk.map(fixture => {
+                    const pred = predictionArray.find((p: any) => p.id === fixture.id);
+                    if (!pred) return fixture;
 
-                // Tier 1 Validation
-                const TIER_1_KEYWORDS = [
-                    "Premier League", "La Liga", "Bundesliga", "Serie A", "Ligue 1",
-                    "Champions League", "Europa League", "Eredivisie", "Primeira Liga",
-                    "World Cup", "Euro", "Copa America", "Libertadores", "Brasileiro",
-                    "Championship"
-                ];
-                const isTier1 = TIER_1_KEYWORDS.some(k => fixture.league.name.includes(k));
+                    const TIER_1_KEYWORDS = ["Premier League", "La Liga", "Bundesliga", "Serie A", "Ligue 1", "Champions League", "Europa League", "Eredivisie", "Primeira Liga", "World Cup", "Euro", "Copa America", "Libertadores", "Brasileiro", "Championship"];
+                    const isTier1 = TIER_1_KEYWORDS.some(k => fixture.league.name.includes(k));
 
-                if (pred) {
-                    // Downgrade if not Tier 1 but marked as VIP
                     let finalConfidence = pred.confidence;
                     let finalTier = pred.requiresTier;
                     let finalReasoning = Array.isArray(pred.reasoning) ? [...pred.reasoning] : [typeof pred.reasoning === 'string' ? pred.reasoning : "AI analysis based on recent form and stats."];
                     let finalIsRisky = pred.isRisky;
 
-                    // 1. Away Game Penalty (-10%)
-                    const pickedRaw = (pred.picked || "").toLowerCase();
-                    const awayIdent = (fixture.awayTeam.name || "").toLowerCase();
-                    if (pickedRaw.includes(awayIdent) || pickedRaw.includes("away")) {
+                    if ((pred.picked || "").toLowerCase().includes((fixture.awayTeam.name || "").toLowerCase()) || (pred.picked || "").toLowerCase().includes("away")) {
                         finalConfidence = Math.max(0, finalConfidence - 10);
                         finalReasoning.push("Confidence penalty: Away match.");
                     }
 
-                    // 2. European Competition Risk
-                    const EURO_LEAGUES = ["Champions League", "Europa League", "Conference League"];
-                    if (EURO_LEAGUES.some(l => fixture.league.name.includes(l))) {
+                    if (["Champions League", "Europa League", "Conference League"].some(l => fixture.league.name.includes(l))) {
                         finalIsRisky = true;
                         finalReasoning.push("High volatility: European fixture.");
                     }
 
-                    // 3. Existing Tier 1 Cap Logic
                     if (finalTier === 'vip' && !isTier1) {
                         finalConfidence = Math.min(finalConfidence, 85);
                         finalReasoning.push("Capped confidence: Non-Tier 1 League.");
                     }
 
-                    // 4. Recalculate Tier & Risk based on finalConfidence
-                    if (finalConfidence < 75) {
-                        finalIsRisky = true;
-                    }
-
+                    if (finalConfidence < 75) finalIsRisky = true;
                     if (finalConfidence >= 90) finalTier = 'vip';
                     else if (finalConfidence >= 80) finalTier = 'standard';
                     else if (finalConfidence >= 70) finalTier = 'basic';
@@ -602,16 +647,23 @@ const analyzeFixtures = async (fixtures: Fixture[], forceRefresh: boolean = fals
                             h2h: pred.h2h
                         }
                     };
+                });
+            } catch (error: any) {
+                if (error.response?.status === 402) {
+                    console.error("[CRITICAL] DeepSeek Billing Empty (402). Entering 1-hour cooldown.");
+                    QUOTA_STATUS.deepseek_billing_empty = true;
+                    QUOTA_STATUS.last_402_at = Date.now();
+                } else {
+                    console.error(`DeepSeek Analysis Error (Chunk ${i + 1}):`, error.message);
                 }
-                return fixture;
-            });
+                return chunk;
+            }
+        });
 
-            allAnalyzedFixtures.push(...analyzedChunk);
-
-        } catch (error) {
-            console.error(`DeepSeek Analysis Error (Chunk ${i + 1}):`, error);
-            allAnalyzedFixtures.push(...chunk); // Fallback to unanalyzed for this chunk
-        }
+        const results = await Promise.all(chunkPromises);
+        results.forEach(chunk => {
+            if (chunk) allAnalyzedFixtures.push(...chunk);
+        });
     }
 
     return allAnalyzedFixtures;
@@ -622,7 +674,8 @@ export const getFixtures = async (
     date: Date,
     sport: Sport = "football",
     showPast: boolean = false,
-    forceRefresh: boolean = false
+    forceRefresh: boolean = false,
+    statusOnly: boolean = false
 ): Promise<Fixture[]> => {
     const dateKey = format(date, "yyyy-MM-dd");
     const nairobiNow = getNairobiNow();
@@ -701,12 +754,38 @@ export const getFixtures = async (
 
     if (fixtures.length === 0 || forceRefresh || isStale(fixtures)) {
         console.log(`[Fetch Triggered] Reason: ${fixtures.length === 0 ? 'Cache Miss' : forceRefresh ? 'Force Refresh' : 'Stale Detected'} for ${sport} on ${dateKey}`);
+
+        // --- NEW NON-BLOCKING STRATEGY ---
+        // If we HAVE fixtures but they are stale, and we are NOT in a cron job (forceRefresh is false),
+        // we return the stale fixtures now and trigger the update in the background.
+        if (fixtures.length > 0 && !forceRefresh) {
+            console.log(`[SWR] Serving stale data for ${dateKey} while refreshing in background...`);
+            // We return now, but we don't 'await' the fetch/analyze block.
+            // Note: In Next.js Server Components / API Routes, unawaited promises can be tricky
+            // if the serverless function exits immediately. 
+            // However, for this project, serving stale is better than a 30s delay.
+            // A dedicated cron will handle the actual deep refresh.
+            return fixtures;
+        }
+
         const rawFixtures = await fetchFromApi(date, sport);
 
         if (rawFixtures && rawFixtures.length > 0) {
-            // Run AI Analysis immediately on new data
-            console.log(`[AI Analysis] Processing ${rawFixtures.length} ${sport} matches with DeepSeek...`);
-            fixtures = await analyzeFixtures(rawFixtures, forceRefresh);
+            if (statusOnly && fixtures.length > 0) {
+                console.log(`[Status Only] Updating scores for ${rawFixtures.length} matches...`);
+                // Merge new statuses into existing analyzed fixtures
+                fixtures = rawFixtures.map(raw => {
+                    const existing = fixtures.find(f => f.id === raw.id);
+                    return {
+                        ...raw,
+                        prediction: existing?.prediction || null // Keep existing analysis
+                    };
+                });
+            } else {
+                // Run AI Analysis immediately on new data
+                console.log(`[AI Analysis] Processing ${rawFixtures.length} ${sport} matches with DeepSeek...`);
+                fixtures = await analyzeFixtures(rawFixtures, forceRefresh);
+            }
 
             try {
                 const batch = writeBatch(db);
@@ -746,37 +825,66 @@ export const getFixtures = async (
  * Client-safe version of getFixtures that calls our internal API route.
  * Use this in components (useEffect) to avoid exposing keys or direct Firestore writes.
  */
-export const getFixturesClient = async (date: Date, sport: Sport = "football", showPast: boolean = false, refresh: boolean = false): Promise<Fixture[]> => {
+export const getFixturesClient = async (date: Date, sport: Sport = "football", showPast: boolean = false, refresh: boolean = false): Promise<{ fixtures: Fixture[], quota?: any }> => {
     try {
         const dateStr = format(date, "yyyy-MM-dd");
         const response = await axios.get(`/api/fixtures?date=${dateStr}&sport=${sport}&showPast=${showPast}&refresh=${refresh}`);
-        return response.data.fixtures || [];
+        return {
+            fixtures: response.data.fixtures || [],
+            quota: response.data.quota
+        };
     } catch (err) {
         console.error("Client Fetch Error:", err);
-        return [];
+        return { fixtures: [], quota: null };
     }
 };
 
 /**
  * Proactively syncs and analyzes fixtures for a range of days.
  * @param days Total number of days to sync
- * @param startOffset The starting day relative to today (e.g., -1 for yesterday)
+ * @param analyzeObscure If true, even non-core leagues will be analyzed by AI
  */
-export const syncAllFixtures = async (days: number = 7, startOffset: number = 0): Promise<void> => {
+export const syncAllFixtures = async (days: number = 7, startOffset: number = 0, analyzeObscure: boolean = false): Promise<void> => {
     const nairobiNow = getNairobiNow();
-    console.log(`[Sync Started] Current Nairobi Time: ${format(nairobiNow, "yyyy-MM-dd HH:mm")}`);
-    console.log(`Proactively analyzing ${days} days starting from offset ${startOffset}...`);
+    console.log(`[Sync Started] Proactively analyzing ${days} days starting from offset ${startOffset}...`);
 
-    const sports: Sport[] = ["football"];
+    for (let i = startOffset; i < (startOffset + days); i++) {
+        const targetDate = addDays(nairobiNow, i);
+        const dateKey = format(targetDate, "yyyy-MM-dd");
+        console.log(`--- Syncing Football for ${dateKey} ---`);
 
-    for (const sport of sports) {
-        for (let i = startOffset; i < (startOffset + days); i++) {
-            const targetDate = addDays(nairobiNow, i);
-            const dateKey = format(targetDate, "yyyy-MM-dd");
-            console.log(`--- Syncing ${sport} for ${dateKey} ---`);
-            // We use forceRefresh=true to ensure we pick up final scores for past games 
-            // and new matches recently added to API for future games.
-            await getFixtures(targetDate, sport, true, true);
+        // 1. Fetch raw fixtures
+        const raw = await fetchFromApi(targetDate);
+        if (!raw || raw.length === 0) continue;
+
+        // 2. TIERED ANALYSIS: Determine which matches to analyze
+        // If Deep Sync is on, we analyze everything. 
+        // Otherwise, we only auto-analyze Core Leagues, but STAKE the obscure ones in Firestore for manual triggers.
+        const matchesToAnalyze = analyzeObscure ? raw : raw.filter(f => isCoreLeague(f.league.name));
+        const matchesToSkip = analyzeObscure ? [] : raw.filter(f => !isCoreLeague(f.league.name));
+
+        console.log(`[Sync] Mode: ${analyzeObscure ? 'DEEP' : 'PRIORITY'}. Analyzing ${matchesToAnalyze.length} matches...`);
+
+        // 3. Analyze matches (chunked & throttled)
+        const analyzed = await analyzeFixtures(matchesToAnalyze);
+        const allFixtures = [...analyzed, ...matchesToSkip];
+
+        // 4. Batch Save to Firestore
+        try {
+            const batch = writeBatch(db);
+            allFixtures.forEach(fixture => {
+                const docRef = doc(db, "fixtures", `football-${dateKey}-${fixture.id}`);
+                batch.set(docRef, { ...fixture, dateKey, sport: "football" });
+            });
+            await batch.commit();
+
+            // 5. Update Redis
+            if (redis) {
+                const redisKey = `fixtures:football:${dateKey}`;
+                await redis.set(redisKey, allFixtures, { ex: 600 });
+            }
+        } catch (err) {
+            console.error(`[Sync] Error saving ${dateKey}:`, err);
         }
     }
     console.log("[Sync Completed]");

@@ -5,7 +5,7 @@ import { useAccess } from "@/hooks/useAccess";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { getFixturesClient as getFixtures, Fixture, Sport } from "@/lib/api-football";
+import { getFixturesClient as getFixtures, Fixture, Sport, isCoreLeague } from "@/lib/api-football";
 import { format, addDays, isSameDay, subDays, isToday, isYesterday, isTomorrow, formatDistanceToNow, differenceInCalendarDays } from "date-fns";
 import { Trophy, Activity, ChevronRight, ChevronLeft, Lock, AlertTriangle, CheckCircle, TrendingUp, Filter, Podcast, Calendar, User as UserIcon, Sparkles } from "lucide-react";
 import { PaymentModal } from "@/components/payment-modal";
@@ -17,6 +17,7 @@ import Link from "next/link";
 import { getResult } from "@/lib/utils";
 import { PerformanceModal } from "@/components/performance-modal";
 import { InstallAppButton } from "@/components/install-app-button";
+import { toast } from "sonner";
 
 // --- Types ---
 type FixtureGroup = {
@@ -96,7 +97,10 @@ export default function DashboardPage() {
     const loadData = async (force: boolean = false) => {
         if (force) setRefreshing(true);
         else setLoadingFixtures(true);
-        const data = await getFixtures(selectedDate, selectedSport, true, force);
+        const { fixtures: data, quota } = await getFixtures(selectedDate, selectedSport, true, force);
+        if (quota?.deepseek_billing_empty) {
+            toast.error("DeepSeek AI is in maintenance (Billing). Predictions for some games may be delayed.", { duration: 10000 });
+        }
         setFixtures(data);
         setLoadingFixtures(false);
         setRefreshing(false);
@@ -348,9 +352,45 @@ export default function DashboardPage() {
                                     )}
                                 </div>
                             ) : (
-                                <div className="flex flex-col items-center gap-1 opacity-20">
-                                    <Activity className="w-3 h-3 animate-spin mb-1" />
-                                    <span className="text-[8px] font-black uppercase tracking-[0.2em]">Crunching</span>
+                                <div className="flex flex-col items-center gap-1.5">
+                                    {isCoreLeague(fixture.league.name) ? (
+                                        <>
+                                            <Activity className="w-3 h-3 animate-spin mb-0.5 opacity-20" />
+                                            <span className="text-[8px] font-black uppercase tracking-[0.2em] opacity-20">Crunching</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Sparkles className="w-3 h-3 text-yellow-500/40 mb-1" />
+                                            <button
+                                                onClick={async (e) => {
+                                                    e.stopPropagation();
+                                                    const dateStr = format(new Date(fixture.date), "yyyy-MM-dd");
+                                                    toast.promise(
+                                                        fetch(`/api/fixtures/${fixture.id}/analyze`, {
+                                                            method: "POST",
+                                                            headers: { "Content-Type": "application/json" },
+                                                            body: JSON.stringify({ dateKey: dateStr })
+                                                        }).then(async (res) => {
+                                                            const data = await res.json();
+                                                            if (!res.ok) throw new Error(data.error || "Failed");
+                                                            return data;
+                                                        }),
+                                                        {
+                                                            loading: 'AI is analyzing...',
+                                                            success: (data) => {
+                                                                setFixtures(prev => prev.map(f => f.id === fixture.id ? data.fixture : f));
+                                                                return 'Analysis complete!';
+                                                            },
+                                                            error: (err) => `Error: ${err.message}`
+                                                        }
+                                                    );
+                                                }}
+                                                className="text-[8px] font-black uppercase tracking-tighter text-yellow-500 border border-yellow-500/20 px-2 py-1 rounded hover:bg-yellow-500/10 transition-all hover:scale-105 active:scale-95"
+                                            >
+                                                Analyze Now
+                                            </button>
+                                        </>
+                                    )}
                                 </div>
                             )}
                         </div>

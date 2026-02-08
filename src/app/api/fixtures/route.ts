@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getFixtures, Sport } from "@/lib/api-football";
+import { getFixtures, Sport, getQuotaStatus } from "@/lib/api-football";
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
@@ -20,8 +20,9 @@ export async function GET(request: Request) {
 
         // The library already handles Cache Hit -> Cache Miss -> Fetch -> Analyze -> Save
         const fixtures = await getFixtures(date, sport, showPast, refresh);
+        const quota = getQuotaStatus();
 
-        return NextResponse.json({ fixtures });
+        return NextResponse.json({ fixtures, quota });
     } catch (error: any) {
         console.error("Server API Error:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });

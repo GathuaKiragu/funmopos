@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { getFixtures, getNairobiNow } from '@/lib/api-football';
 import { sendTelegramMessage } from '@/lib/telegram-service';
 import { sendBulkSMS } from '@/lib/sms-service';
+import { postToX, postToFacebook } from '@/lib/social-media-service';
 import { getAdminDb } from '@/lib/firebase-admin';
 import { format } from 'date-fns';
 
@@ -90,7 +91,26 @@ export async function POST(request: Request) {
             telegramResult.success = true;
         }
 
-        // 4. Send SMS
+        // 4. Send Social Media
+        const socialMessage = `🔥 Today's Top Betting Picks are Live! 🔥\n\n` +
+            topPicks.map(p => `⚽ ${p.homeTeam.name} vs ${p.awayTeam.name}`).join('\n') +
+            `\n\nCheck full analysis here: ${SITE_URL}\n\n#BettingTips #Football #FunmoTips`;
+
+        let xResult = { success: false };
+        let fbResult = { success: false };
+
+        if (!testMode) {
+            const xRes = await postToX(socialMessage);
+            const fbRes = await postToFacebook(socialMessage);
+            xResult.success = xRes.success;
+            fbResult.success = fbRes.success;
+        } else {
+            console.log('[Test Mode] Social Media Message:\n', socialMessage);
+            xResult.success = true;
+            fbResult.success = true;
+        }
+
+        // 5. Send SMS
         const db = getAdminDb();
         const usersSnapshot = await db.collection('users').get();
         let smsResult = { sent: 0, failed: 0 };
@@ -122,6 +142,7 @@ export async function POST(request: Request) {
         return NextResponse.json({
             success: true,
             telegram: telegramResult.success,
+            social: { x: xResult.success, facebook: fbResult.success },
             sms: { total: usersToNotify.length, sent: smsResult.sent, failed: smsResult.failed }
         });
 

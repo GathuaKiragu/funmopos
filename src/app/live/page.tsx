@@ -12,7 +12,7 @@ export default function LivePage() {
     const loadLive = async () => {
         setLoading(true);
         // Fetch TODAY's data
-        const data = await getFixtures(new Date(), "football", true);
+        const { fixtures: data } = await getFixtures(new Date(), "football", true);
         // Client-side filter for LIVE status
         const live = data.filter(f => ['1H', 'HT', '2H', 'ET', 'P', 'LIVE'].includes(f.status.short));
         setFixtures(live);

@@ -4,7 +4,8 @@ import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
 import { PageTracker } from "@/components/PageTracker";
 import { SpeedInsights } from "@vercel/speed-insights/next";
-import { ServiceWorkerRegister } from "@/components/pwa-register";
+import ServiceWorkerRegister from "@/components/pwa-register";
+import { Toaster } from "sonner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -90,6 +91,7 @@ const jsonLd = {
   }
 };
 
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -98,7 +100,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased font-sans bg-black`}
       >
 
         <script
@@ -106,6 +108,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
         <ServiceWorkerRegister />
+        <Toaster position="top-center" richColors theme="dark" />
         <AuthProvider>
           <PageTracker />
           {children}

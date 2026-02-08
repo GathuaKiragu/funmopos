@@ -20,7 +20,7 @@ export default function Home() {
     const loadFixtures = async () => {
       setLoading(true);
       // Show past games so users can see results/wins for "today"
-      const data = await getFixtures(new Date(), selectedSport, true);
+      const { fixtures: data } = await getFixtures(new Date(), selectedSport, true);
 
       // Filter Free Games (Top 3)
       const free = data
