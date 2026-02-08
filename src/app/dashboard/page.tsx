@@ -7,7 +7,7 @@ import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { getFixturesClient as getFixtures, Fixture, Sport, isCoreLeague } from "@/lib/api-football";
 import { format, addDays, isSameDay, subDays, isToday, isYesterday, isTomorrow, formatDistanceToNow, differenceInCalendarDays } from "date-fns";
-import { Trophy, Activity, ChevronRight, ChevronLeft, Lock, AlertTriangle, CheckCircle, TrendingUp, Filter, Podcast, Calendar, User as UserIcon, Sparkles } from "lucide-react";
+import { Trophy, Activity, ChevronRight, ChevronLeft, Lock, AlertTriangle, CheckCircle, TrendingUp, Filter, Podcast, Calendar, User as UserIcon, Sparkles, Search, X } from "lucide-react";
 import { PaymentModal } from "@/components/payment-modal";
 import { MatchAnalysisModal } from "@/components/analysis-modal";
 import { calculateStake } from "@/lib/bankroll";
@@ -44,7 +44,8 @@ export default function DashboardPage() {
     const [bankroll, setBankroll] = useState(0);
 
     // Filters
-    const [filterMode, setFilterMode] = useState<'ALL' | 'LIVE' | 'WATCH'>('ALL'); // WATCH = High Confidence
+    const [viewMode, setViewMode] = useState<'CORE' | 'ALL' | 'LIVE'>('CORE');
+    const [searchQuery, setSearchQuery] = useState('');
     const [selectedLeague, setSelectedLeague] = useState<string>('ALL');
     const [activeTab, setActiveTab] = useState<'LATEST' | 'HISTORY'>('LATEST');
 
@@ -119,25 +120,33 @@ export default function DashboardPage() {
     const getFilteredFixtures = () => {
         return fixtures.filter(f => {
             const isFinished = ['FT', 'AET', 'PEN'].includes(f.status.short);
+            const isLive = ['1H', 'HT', '2H', 'ET', 'P', 'LIVE'].includes(f.status.short);
             const confidence = f.prediction?.confidence || 0;
             const isRisky = f.prediction?.isRisky || false;
 
-            // Tab Filter (History vs Latest)
+            // 1. Tab Filter (History vs Latest)
             if (activeTab === 'HISTORY') {
-                // History: Only show VIP picks (>85% confidence, NOT risky)
                 if (!isFinished) return false;
                 if (confidence <= 85) return false;
                 if (isRisky) return false;
             }
             if (activeTab === 'LATEST' && isFinished) return false;
 
-            // League Filter
+            // 2. View Mode Filter
+            if (viewMode === 'CORE' && !isCoreLeague(f.league.name)) return false;
+            if (viewMode === 'LIVE' && !isLive) return false;
+
+            // 3. Search Filter
+            if (searchQuery) {
+                const query = searchQuery.toLowerCase();
+                const matchesTeam = f.homeTeam.name.toLowerCase().includes(query) || f.awayTeam.name.toLowerCase().includes(query);
+                const matchesLeague = f.league.name.toLowerCase().includes(query);
+                if (!matchesTeam && !matchesLeague) return false;
+            }
+
+            // 4. League Filter (Secondary)
             if (selectedLeague !== 'ALL' && f.league.name !== selectedLeague) return false;
 
-            // Mode Filter
-            const isLive = ['1H', 'HT', '2H', 'ET', 'P', 'LIVE'].includes(f.status.short);
-            if (filterMode === 'LIVE') return isLive;
-            if (filterMode === 'WATCH') return confidence > 70;
             return true;
         });
     };
@@ -361,34 +370,7 @@ export default function DashboardPage() {
                                     ) : (
                                         <>
                                             <Sparkles className="w-3 h-3 text-yellow-500/40 mb-1" />
-                                            <button
-                                                onClick={async (e) => {
-                                                    e.stopPropagation();
-                                                    const dateStr = format(new Date(fixture.date), "yyyy-MM-dd");
-                                                    toast.promise(
-                                                        fetch(`/api/fixtures/${fixture.id}/analyze`, {
-                                                            method: "POST",
-                                                            headers: { "Content-Type": "application/json" },
-                                                            body: JSON.stringify({ dateKey: dateStr })
-                                                        }).then(async (res) => {
-                                                            const data = await res.json();
-                                                            if (!res.ok) throw new Error(data.error || "Failed");
-                                                            return data;
-                                                        }),
-                                                        {
-                                                            loading: 'AI is analyzing...',
-                                                            success: (data) => {
-                                                                setFixtures(prev => prev.map(f => f.id === fixture.id ? data.fixture : f));
-                                                                return 'Analysis complete!';
-                                                            },
-                                                            error: (err) => `Error: ${err.message}`
-                                                        }
-                                                    );
-                                                }}
-                                                className="text-[8px] font-black uppercase tracking-tighter text-yellow-500 border border-yellow-500/20 px-2 py-1 rounded hover:bg-yellow-500/10 transition-all hover:scale-105 active:scale-95"
-                                            >
-                                                Analyze Now
-                                            </button>
+                                            <span className="text-[8px] font-black uppercase tracking-[0.2em] opacity-20 italic">VIP Queue</span>
                                         </>
                                     )}
                                 </div>
@@ -599,10 +581,29 @@ export default function DashboardPage() {
                         </div>
 
                         <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 shrink-0">
-                            <button onClick={() => setFilterMode('ALL')} className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${filterMode === 'ALL' ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'}`}>All</button>
-                            <button onClick={() => setFilterMode('WATCH')} className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-1 ${filterMode === 'WATCH' ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'}`}><TrendingUp className="w-3 h-3" /> Best</button>
-                            <button onClick={() => setFilterMode('LIVE')} className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-1 ${filterMode === 'LIVE' ? 'bg-red-500 text-white animate-pulse' : 'text-gray-400 hover:text-white'}`}><Podcast className="w-3 h-3" /> Live</button>
+                            <button onClick={() => setViewMode('CORE')} className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${viewMode === 'CORE' ? 'bg-yellow-500 text-black shadow-[0_0_10px_rgba(234,179,8,0.3)]' : 'text-gray-400 hover:text-white'}`}>Core</button>
+                            <button onClick={() => setViewMode('ALL')} className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-1 ${viewMode === 'ALL' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'}`}>All</button>
+                            <button onClick={() => setViewMode('LIVE')} className={`px-4 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-1 ${viewMode === 'LIVE' ? 'bg-red-500 text-white animate-pulse' : 'text-gray-400 hover:text-white'}`}><Podcast className="w-3 h-3" /> Live</button>
                         </div>
+                    </div>
+
+                    <div className="relative group">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-yellow-500 transition-colors" />
+                        <input
+                            type="text"
+                            placeholder="Search team or league..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 pl-11 pr-12 text-sm focus:outline-none focus:border-yellow-500/50 focus:ring-1 focus:ring-yellow-500/50 transition-all placeholder:text-gray-600"
+                        />
+                        {searchQuery && (
+                            <button
+                                onClick={() => setSearchQuery('')}
+                                className="absolute right-4 top-1/2 -translate-y-1/2 p-1 hover:bg-white/10 rounded-full transition-colors"
+                            >
+                                <X className="w-3 h-3 text-gray-500" />
+                            </button>
+                        )}
                     </div>
 
                     <div className="flex flex-col md:flex-row items-center justify-between gap-6">
@@ -789,7 +790,7 @@ export default function DashboardPage() {
 
                         <Button
                             variant="link"
-                            onClick={() => { setFilterMode('ALL'); setSelectedDate(new Date()); setSelectedLeague('ALL'); }}
+                            onClick={() => { setViewMode('CORE'); setSelectedDate(new Date()); setSelectedLeague('ALL'); setSearchQuery(''); }}
                             className="text-yellow-500 text-xs mt-6 hover:text-yellow-400"
                         >
                             Reset All Filters

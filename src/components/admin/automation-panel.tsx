@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, Zap, Send, CheckCircle, AlertCircle, RefreshCw, Sparkles, Activity, ShieldAlert } from "lucide-react";
+import { Loader2, Zap, Send, CheckCircle, AlertCircle, RefreshCw, Sparkles, Activity, ShieldAlert, Trophy } from "lucide-react";
 
 export default function AutomationPanel() {
     const [loading, setLoading] = useState(false);
@@ -145,6 +145,32 @@ export default function AutomationPanel() {
         }
     };
 
+    const handleDetectWins = async () => {
+        setLoading(true);
+        setResult(null);
+        try {
+            const res = await fetch(`/api/admin/detect-wins`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ secret: "DEVELOPMENT_TOKEN" })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setResult({
+                    success: true,
+                    message: `Processed winners! Found and posted ${data.processed || 0} rewards.`,
+                    triggerSource: 'dailyPicks'
+                });
+            } else {
+                setResult({ success: false, message: data.error || "Detection failed" });
+            }
+        } catch (error: any) {
+            setResult({ success: false, message: error.message || "Network error" });
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex items-center gap-3">
@@ -223,6 +249,28 @@ export default function AutomationPanel() {
                         >
                             {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
                             Run Deep Sync (Today)
+                        </Button>
+                    </div>
+                </div>
+
+                <div className="flex flex-col md:flex-row items-center justify-between gap-6 pt-6 border-t border-white/10 mt-6">
+                    <div className="space-y-1 text-emerald-500">
+                        <h3 className="font-bold flex items-center gap-2">
+                            Social Win Detector
+                            <span className="text-[10px] bg-emerald-500/20 px-2 py-0.5 rounded-full uppercase">Celebration</span>
+                        </h3>
+                        <p className="text-sm text-gray-400">
+                            Scans finished matches for wins and automatically broadcasts them to Telegram, X, and Facebook.
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                        <Button
+                            onClick={handleDetectWins}
+                            disabled={loading}
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
+                        >
+                            {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trophy className="w-4 h-4 mr-2" />}
+                            Detect & Post Wins
                         </Button>
                     </div>
                 </div>

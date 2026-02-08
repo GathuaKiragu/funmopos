@@ -80,6 +80,8 @@ export interface Fixture {
         away: PlayerStats[];
     };
     latestOdds?: MarketOdds[];
+    socialPosted?: boolean;
+    socialPostedAt?: number;
 }
 
 // --- Pro API Interfaces ---
@@ -791,7 +793,7 @@ export const getFixtures = async (
                 const batch = writeBatch(db);
                 fixtures.forEach(fixture => {
                     const docRef = doc(db, "fixtures", `${sport}-${dateKey}-${fixture.id}`);
-                    batch.set(docRef, { ...fixture, dateKey });
+                    batch.set(docRef, { ...fixture, dateKey, socialPosted: fixture.socialPosted ?? false });
                 });
                 await batch.commit();
                 console.log(`[Cache Update] Saved ${fixtures.length} analyzed ${sport} matches for ${dateKey}.`);
@@ -874,7 +876,7 @@ export const syncAllFixtures = async (days: number = 7, startOffset: number = 0,
             const batch = writeBatch(db);
             allFixtures.forEach(fixture => {
                 const docRef = doc(db, "fixtures", `football-${dateKey}-${fixture.id}`);
-                batch.set(docRef, { ...fixture, dateKey, sport: "football" });
+                batch.set(docRef, { ...fixture, dateKey, sport: "football", socialPosted: fixture.socialPosted ?? false });
             });
             await batch.commit();
 

@@ -4,7 +4,7 @@ import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
 import { PageTracker } from "@/components/PageTracker";
 import { SpeedInsights } from "@vercel/speed-insights/next";
-import ServiceWorkerRegister from "@/components/pwa-register";
+import { ServiceWorkerRegister } from "@/components/pwa-register";
 import { Toaster } from "sonner";
 
 const geistSans = Geist({
