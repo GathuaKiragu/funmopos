@@ -194,7 +194,7 @@ export const getNairobiNow = () => {
 };
 
 // Fetch from Football-Data.org
-const fetchFromApi = async (targetDate: Date, sport: Sport = "football"): Promise<Fixture[]> => {
+export const fetchFromApi = async (targetDate: Date, sport: Sport = "football"): Promise<Fixture[]> => {
     if (sport !== "football") {
         console.warn(`Sport ${sport} not yet supported in real-time fetch`);
         return [];
@@ -860,12 +860,18 @@ export const syncAllFixtures = async (days: number = 7, startOffset: number = 0,
         if (!raw || raw.length === 0) continue;
 
         // 2. TIERED ANALYSIS: Determine which matches to analyze
-        // If Deep Sync is on, we analyze everything. 
-        // Otherwise, we only auto-analyze Core Leagues, but STAKE the obscure ones in Firestore for manual triggers.
-        const matchesToAnalyze = analyzeObscure ? raw : raw.filter(f => isCoreLeague(f.league.name));
-        const matchesToSkip = analyzeObscure ? [] : raw.filter(f => !isCoreLeague(f.league.name));
+        // Priority logic:
+        // - Today (offset 0): ALWAYS Deep Sync (analyze all matches) so users never see "crunching".
+        // - Future: Only Core Leagues by default, manual triggers for obscure.
+        // - Past: Skip entirely (already handled).
 
-        console.log(`[Sync] Mode: ${analyzeObscure ? 'DEEP' : 'PRIORITY'}. Analyzing ${matchesToAnalyze.length} matches...`);
+        const isTodaySync = i === 0;
+        const shouldDeepSync = analyzeObscure || isTodaySync;
+
+        const matchesToAnalyze = shouldDeepSync ? raw : raw.filter(f => isCoreLeague(f.league.name));
+        const matchesToSkip = shouldDeepSync ? [] : raw.filter(f => !isCoreLeague(f.league.name));
+
+        console.log(`[Sync] ${dateKey} (Offset: ${i}) | Mode: ${shouldDeepSync ? 'DEEP' : 'PRIORITY'}. Analyzing ${matchesToAnalyze.length} matches...`);
 
         // 3. Analyze matches (chunked & throttled)
         const analyzed = await analyzeFixtures(matchesToAnalyze);

@@ -116,6 +116,27 @@ export default function DashboardPage() {
         setSelectedLeague('ALL'); // Reset league when switching tabs
     }, [activeTab]);
 
+    const handleAnalyzeMatch = async (fixtureId: number, dateKey: string) => {
+        toast.promise(
+            fetch('/api/admin/sync-match', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fixtureId, dateKey })
+            }).then(async res => {
+                if (!res.ok) throw new Error(await res.text());
+                return res.json();
+            }),
+            {
+                loading: 'AI is analyzing match data...',
+                success: (data) => {
+                    loadData(true); // Refresh dashboard
+                    return 'Analysis complete!';
+                },
+                error: (err) => `Analysis failed: ${err.message}`
+            }
+        );
+    };
+
     // -- Filtering & Grouping --
     const getFilteredFixtures = () => {
         return fixtures.filter(f => {
@@ -369,8 +390,23 @@ export default function DashboardPage() {
                                         </>
                                     ) : (
                                         <>
-                                            <Sparkles className="w-3 h-3 text-yellow-500/40 mb-1" />
-                                            <span className="text-[8px] font-black uppercase tracking-[0.2em] opacity-20 italic">VIP Queue</span>
+                                            {!isFinished && differenceInCalendarDays(new Date(fixture.date), new Date()) > 0 ? (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleAnalyzeMatch(fixture.id, format(new Date(fixture.date), "yyyy-MM-dd"));
+                                                    }}
+                                                    className="flex flex-col items-center gap-1 group/btn"
+                                                >
+                                                    <Sparkles className="w-4 h-4 text-yellow-500/60 group-hover/btn:text-yellow-500 transition-colors" />
+                                                    <span className="text-[7px] font-black uppercase tracking-widest text-yellow-500/40 group-hover/btn:text-yellow-500">Analyze Now</span>
+                                                </button>
+                                            ) : (
+                                                <>
+                                                    <Sparkles className="w-3 h-3 text-yellow-500/40 mb-1" />
+                                                    <span className="text-[8px] font-black uppercase tracking-[0.2em] opacity-20 italic">VIP Queue</span>
+                                                </>
+                                            )}
                                         </>
                                     )}
                                 </div>
