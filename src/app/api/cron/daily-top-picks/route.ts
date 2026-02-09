@@ -45,21 +45,13 @@ export async function GET(request: Request) {
             return NextResponse.json({ message: 'No high confidence picks found for today' });
         }
 
-        // 4. Format Telegram Message
-        let telegramMessage = `🔥 <b>TODAY’S TIPS – ${displayDate}</b> 🔥\n\n`;
-
-        topPicks.forEach((pick, index) => {
-            const home = pick.homeTeam.name;
-            const away = pick.awayTeam.name;
-            const prediction = pick.prediction?.picked || 'N/A';
-            const confidence = pick.prediction?.confidence || 0;
-
-            // Try to find odds if available in predictions or latestOdds
+        // 4. Generate Image URL
+        const picksForImage = topPicks.map(p => {
             let odds = 'N/A';
-            if (pick.latestOdds && pick.latestOdds.length > 0) {
-                // Find outcome odds for the prediction type
-                // Simplified for now, just taking Match Winner if possible
-                const mainMarket = pick.latestOdds[0].bets.find(b => b.name === 'Match Winner' || b.name === 'Home/Away');
+            const prediction = p.prediction?.picked || 'N/A';
+
+            if (p.latestOdds && p.latestOdds.length > 0) {
+                const mainMarket = p.latestOdds[0].bets.find(b => b.name === 'Match Winner' || b.name === 'Home/Away');
                 if (mainMarket) {
                     const predictionInLower = prediction.toLowerCase();
                     const val = mainMarket.values.find(v =>
@@ -68,13 +60,34 @@ export async function GET(request: Request) {
                     );
                     if (val) odds = val.odd;
                 }
-            } else if (pick.openingOdds) {
-                // Fallback to opening odds
+            } else if (p.openingOdds) {
+                const home = p.homeTeam.name;
+                const away = p.awayTeam.name;
                 const predictionInLower = prediction.toLowerCase();
-                if (predictionInLower.includes(home.toLowerCase())) odds = pick.openingOdds.home.toFixed(2);
-                else if (predictionInLower.includes(away.toLowerCase())) odds = pick.openingOdds.away.toFixed(2);
-                else if (predictionInLower.includes('draw')) odds = pick.openingOdds.draw.toFixed(2);
+                if (predictionInLower.includes(home.toLowerCase())) odds = p.openingOdds.home.toFixed(2);
+                else if (predictionInLower.includes(away.toLowerCase())) odds = p.openingOdds.away.toFixed(2);
+                else if (predictionInLower.includes('draw')) odds = p.openingOdds.draw.toFixed(2);
             }
+
+            return {
+                home: p.homeTeam.name,
+                away: p.awayTeam.name,
+                tip: prediction,
+                odds: odds
+            };
+        });
+
+        const imageUrl = `${SITE_URL}/api/og/picks?date=${encodeURIComponent(displayDate)}&picks=${encodeURIComponent(JSON.stringify(picksForImage))}`;
+        console.log('[Daily Cron] Generated Image URL:', imageUrl);
+
+        // 5. Format Telegram Message
+        let telegramMessage = `🔥 <b>TODAY’S TIPS – ${displayDate}</b> 🔥\n\n`;
+
+        topPicks.forEach((pick, index) => {
+            const home = pick.homeTeam.name;
+            const away = pick.awayTeam.name;
+            const prediction = pick.prediction?.picked || 'N/A';
+            const odds = picksForImage[index].odds;
 
             telegramMessage += `⚽ Match ${index + 1}:\n`;
             telegramMessage += `<b>${home} vs ${away}</b>\n`;
@@ -86,28 +99,36 @@ export async function GET(request: Request) {
         telegramMessage += `<b>${SITE_URL}</b>\n\n`;
         telegramMessage += `⚠️ Bet smart. Play responsibly.`;
 
-        // 5. Send Telegram
+        // 6. Send Telegram
         let telegramResult: { success: boolean; error?: string } = { success: false, error: 'Test Mode' };
         if (!testMode) {
-            const res = await sendTelegramMessage(telegramMessage);
+            // Use sendTelegramPhoto instead of sendMessage
+            const { sendTelegramPhoto } = await import('@/lib/telegram-service');
+            const res = await sendTelegramPhoto(telegramMessage, imageUrl);
             telegramResult = { success: res.success, error: typeof res.error === 'string' ? res.error : JSON.stringify(res.error) };
         } else {
             console.log('[Test Mode] Telegram Message:\n', telegramMessage);
             telegramResult = { success: true };
         }
 
-        // 6. Format Social Media Message (Shorter for X)
+        // 7. Format Social Media Message (Shorter for X)
         const socialMessage = `🔥 Today's Top Betting Picks are Live! 🔥\n\n` +
             topPicks.map(p => `⚽ ${p.homeTeam.name} vs ${p.awayTeam.name}`).join('\n') +
             `\n\nCheck full analysis here: ${SITE_URL}\n\n#BettingTips #Football #FunmoTips`;
 
-        // 7. Send Social Media
+        // 8. Send Social Media
         let xResult = { success: false, error: 'Test Mode' };
         let fbResult = { success: false, error: 'Test Mode' };
 
         if (!testMode) {
-            const xRes = await postToX(socialMessage);
-            const fbRes = await postToFacebook(socialMessage);
+            const { postToXWithMedia } = await import('@/lib/social-media-service');
+
+            // Post to X with Image
+            const xRes = await postToXWithMedia(socialMessage, imageUrl);
+
+            // Post to FB with Image
+            const fbRes = await postToFacebook(socialMessage, imageUrl);
+
             xResult = { success: xRes.success, error: xRes.error || '' };
             fbResult = { success: fbRes.success, error: fbRes.error || '' };
         } else {

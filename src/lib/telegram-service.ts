@@ -34,3 +34,35 @@ export async function sendTelegramMessage(message: string): Promise<{ success: b
         return { success: false, error: error.response?.data?.description || error.message };
     }
 }
+
+/**
+ * Send a photo to the configured Telegram channel.
+ * @param caption The caption for the photo
+ * @param photoUrl The URL of the photo to send
+ * @returns Object indicating success or failure
+ */
+export async function sendTelegramPhoto(caption: string, photoUrl: string): Promise<{ success: boolean; error?: any }> {
+    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHANNEL_ID) {
+        return { success: false, error: 'Telegram credentials missing' };
+    }
+
+    try {
+        const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`;
+        const response = await axios.post(url, {
+            chat_id: TELEGRAM_CHANNEL_ID,
+            photo: photoUrl,
+            caption: caption,
+            parse_mode: 'HTML'
+        });
+
+        if (response.data.ok) {
+            return { success: true };
+        } else {
+            console.error('Telegram Photo API error:', response.data);
+            return { success: false, error: response.data.description };
+        }
+    } catch (error: any) {
+        console.error('Telegram Photo Request error:', error.response?.data || error.message);
+        return { success: false, error: error.response?.data?.description || error.message };
+    }
+}

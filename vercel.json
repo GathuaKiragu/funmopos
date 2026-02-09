@@ -1,8 +1,19 @@
-{
     "crons": [
         {
             "path": "/api/cron/daily-sync",
-            "schedule": "0 0 * * *"
+            "schedule": "0 21,5,7 * * *"
+        },
+        {
+            "path": "/api/cron/fast-sync",
+            "schedule": "*/10 * * * *"
+        },
+        {
+            "path": "/api/cron/daily-top-picks",
+            "schedule": "0 5 * * *"
+        },
+        {
+            "path": "/api/admin/detect-wins",
+            "schedule": "0 * * * *"
         }
     ]
 }

@@ -63,13 +63,30 @@ Data-driven precision. Join the winning team at funmotips.com
 #FunmoTips #FootballPredictions #Winner #SportsBetting
                 `.trim();
 
-                // Post to social media
-                const telegram = await sendTelegramMessage(message);
+                // Generate Win Image
+                const picksForImage = [{
+                    home: fixture.homeTeam.name,
+                    away: fixture.awayTeam.name,
+                    tip: prediction.picked,
+                    odds: "WON"
+                }];
+                const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://funmotips.africa';
+                const imageUrl = `${siteUrl}/api/og/picks?date=Winner&picks=${encodeURIComponent(JSON.stringify(picksForImage))}`;
+
+                console.log(`[WinDetector] Generated Image URL: ${imageUrl}`);
+
+                // Post to social media (Telegram with Photo)
+                const { sendTelegramPhoto } = await import("@/lib/telegram-service");
+                const telegram = await sendTelegramPhoto(message, imageUrl);
 
                 // For Twitter/FB, remove HTML tags
                 const plainText = message.replace(/<[^>]*>/g, '');
-                const xPost = await postToX(plainText);
-                const fbPost = await postToFacebook(plainText);
+
+                const { postToXWithMedia } = await import("@/lib/social-media-service");
+                const xPost = await postToXWithMedia(plainText, imageUrl);
+
+                // FB supports image URL directly
+                const fbPost = await postToFacebook(plainText, imageUrl);
 
                 // Mark as posted regardless of success to avoid spamming on partial failures
                 await updateDoc(doc(db, "fixtures", docSnap.id), {
@@ -80,7 +97,7 @@ Data-driven precision. Join the winning team at funmotips.com
                 results.push({
                     id: fixture.id,
                     match: `${fixture.homeTeam.name} vs ${fixture.awayTeam.name}`,
-                    posted: { telegram, x: xPost, facebook: fbPost }
+                    posted: { telegram: telegram.success, x: xPost.success, facebook: fbPost.success }
                 });
             } else if (result === 'LOST' || result === 'VOID') {
                 // Also mark as posted if lost, so we don't check again

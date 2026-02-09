@@ -882,7 +882,15 @@ export const syncAllFixtures = async (days: number = 7, startOffset: number = 0,
     const nairobiNow = getNairobiNow();
     console.log(`[Sync Started] Proactively analyzing ${days} days starting from offset ${startOffset}...`);
 
-    for (let i = startOffset; i < (startOffset + days); i++) {
+    const indices = Array.from({ length: days }, (_, i) => startOffset + i);
+    // Sort indices to prioritize 0 (Today) -> then others
+    indices.sort((a, b) => {
+        if (a === 0) return -1;
+        if (b === 0) return 1;
+        return a - b;
+    });
+
+    for (const i of indices) {
         const targetDate = addDays(nairobiNow, i);
         const dateKey = format(targetDate, "yyyy-MM-dd");
         console.log(`--- Syncing Football for ${dateKey} ---`);
@@ -970,6 +978,80 @@ export const syncAllFixtures = async (days: number = 7, startOffset: number = 0,
         }
     }
     console.log("[Sync Completed]");
+};
+
+/**
+ * Checks for Core League matches today/tomorrow that are missing predictions
+ * and triggers analysis for them. This creates a "self-healing" cache.
+ */
+export const syncMissingCorePredictions = async (daysAhead: number = 1): Promise<void> => {
+    const nairobiNow = getNairobiNow();
+    console.log(`[Smart Sync] Checking for missing core predictions for next ${daysAhead} days...`);
+
+    for (let i = 0; i <= daysAhead; i++) {
+        const targetDate = addDays(nairobiNow, i);
+        const dateKey = format(targetDate, "yyyy-MM-dd");
+
+        // 1. Get existing fixtures from Firestore
+        const fixturesRef = collection(db, "fixtures");
+        const q = query(
+            fixturesRef,
+            where("dateKey", "==", dateKey),
+            where("sport", "==", "football") // Only football for now
+        );
+        const snapshot = await getDocs(q);
+
+        if (snapshot.empty) {
+            console.log(`[Smart Sync] No fixtures found for ${dateKey}, skipping...`);
+            continue;
+        }
+
+        const fixtures = snapshot.docs.map(d => d.data() as Fixture);
+
+        // 2. Filter: Core League + Missing Prediction + Future/Today
+        const missingAnalysis = fixtures.filter(f => {
+            const isCore = isCoreLeague(f.league.name);
+            const hasPrediction = !!f.prediction;
+            const isFinished = ['FT', 'AET', 'PEN'].includes(f.status.short);
+
+            return isCore && !hasPrediction && !isFinished;
+        });
+
+        if (missingAnalysis.length === 0) {
+            console.log(`[Smart Sync] All core matches for ${dateKey} have predictions. Good.`);
+            continue;
+        }
+
+        console.log(`[Smart Sync] Found ${missingAnalysis.length} core matches missing predictions for ${dateKey}. Healing...`);
+
+        // 3. Analyze & Save
+        const analyzed = await analyzeFixtures(missingAnalysis, false);
+
+        if (analyzed.length > 0) {
+            const batch = writeBatch(db);
+            analyzed.forEach(fixture => {
+                const docRef = doc(db, "fixtures", `football-${dateKey}-${fixture.id}`);
+                batch.set(docRef, {
+                    ...fixture,
+                    dateKey
+                }, { merge: true });
+            });
+            await batch.commit();
+            console.log(`[Smart Sync] Healed ${analyzed.length} matches for ${dateKey}.`);
+
+            // Update Redis
+            if (redis) {
+                // We need to fetch the FULL list again to update Redis correctly, 
+                // or we could just merge, but fetching fresh is safer to ensure completeness
+                const fullList = fixtures.map(f => {
+                    const updated = analyzed.find(a => a.id === f.id);
+                    return updated || f;
+                });
+                const ttl = isToday(targetDate) ? 600 : 86400;
+                await redis.set(`fixtures:football:${dateKey}`, fullList, { ex: ttl });
+            }
+        }
+    }
 };
 
 export async function saveOpeningOdds(fixtureId: number, odds: { home: number, draw: number, away: number }) {
