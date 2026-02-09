@@ -73,7 +73,8 @@ export async function GET(request: Request) {
                 home: p.homeTeam.name,
                 away: p.awayTeam.name,
                 tip: prediction,
-                odds: odds
+                odds: odds,
+                confidence: p.prediction?.confidence || 0
             };
         });
 

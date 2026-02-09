@@ -116,12 +116,25 @@ export async function postToFacebook(message: string, imageUrl?: string): Promis
         }
     } catch (error: any) {
         const errorData = error.response?.data?.error;
-        console.error('Facebook Posting Error Detail:', errorData || error.message);
+        console.error('[Facebook] Posting Error Detail:', JSON.stringify({
+            message: errorData?.message || error.message,
+            type: errorData?.type,
+            code: errorData?.code,
+            fbtrace_id: errorData?.fbtrace_id,
+            status: error.response?.status
+        }, null, 2));
 
         let errorMsg = errorData?.message || error.message;
 
-        if (errorMsg.includes('global id')) {
-            errorMsg = "Facebook Page ID Error: Please ensure you are using the 'Page ID' from your Page Settings, not a Business ID.";
+        // Common Facebook API errors
+        if (errorMsg.includes('global id') || errorMsg.includes('Unsupported get request')) {
+            errorMsg = "Facebook Page ID Error: Please verify you're using the numeric Page ID from Page Settings, not a username or Business ID.";
+        } else if (errorMsg.includes('access token') || errorMsg.includes('OAuthException')) {
+            errorMsg = "Facebook Token Error: Your Page Access Token may have expired or lacks required permissions (pages_manage_posts, pages_read_engagement).";
+        } else if (errorMsg.includes('permissions')) {
+            errorMsg = "Facebook Permissions Error: The token needs 'pages_manage_posts' and 'pages_read_engagement' permissions.";
+        } else if (errorMsg.includes('Invalid parameter')) {
+            errorMsg = `Facebook Parameter Error: ${errorData?.message}. Check that the image URL is publicly accessible.`;
         }
 
         return { success: false, error: errorMsg };
