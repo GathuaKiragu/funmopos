@@ -153,6 +153,17 @@ export const isCoreLeague = (leagueName: string) => {
     return CORE_LEAGUE_NAMES.some(core => leagueName.toLowerCase().includes(core.toLowerCase()));
 };
 
+/**
+ * Determines if a fixture is "important" enough to be saved to Firestore.
+ * - If it's a Core League (PL, UCL, etc.)
+ * - OR if it has a prediction/analysis
+ */
+export const shouldPersist = (fixture: Fixture): boolean => {
+    if (isCoreLeague(fixture.league.name)) return true;
+    if (fixture.prediction) return true;
+    return false;
+};
+
 // --- QUOTA & BILLING TRACKING ---
 // Simple in-memory global state to handle 402/429 errors gracefully
 let QUOTA_STATUS = {
@@ -471,7 +482,7 @@ export const analyzeFixtures = async (fixtures: Fixture[], forceRefresh: boolean
     }
 
     // Implementation of Chunking: DeepSeek might fail with too many matches in one prompt
-    const CHUNK_SIZE = 10; // Reduced from 20 to prevent timeouts
+    const CHUNK_SIZE = 5; // Reduced from 10 to further prevent timeouts with heavy enrichment data
     const fixtureChunks = [];
     for (let i = 0; i < fixtures.length; i += CHUNK_SIZE) {
         fixtureChunks.push(fixtures.slice(i, i + CHUNK_SIZE));
@@ -659,7 +670,8 @@ export const analyzeFixtures = async (fixtures: Fixture[], forceRefresh: boolean
                     QUOTA_STATUS.deepseek_billing_empty = true;
                     QUOTA_STATUS.last_402_at = Date.now();
                 } else {
-                    console.error(`DeepSeek Analysis Error (Chunk ${i + 1}):`, error.message);
+                    console.error(`DeepSeek Analysis Error (Chunk ${globalIdx + 1}):`, error.message);
+                    // Return unanalyzed fixtures for this chunk to allow the batch to proceed
                 }
                 return chunk;
             }
@@ -765,37 +777,12 @@ export const getFixtures = async (
     if (fixtures.length === 0 || forceRefresh || isStale(fixtures)) {
         console.log(`[Fetch Triggered] Reason: ${fixtures.length === 0 ? 'Cache Miss' : forceRefresh ? 'Force Refresh' : 'Stale Detected'} for ${sport} on ${dateKey}`);
 
-        // --- NEW NON-BLOCKING STRATEGY ---
-        // We ALWAYS return what we have (even if stale) and refresh in background.
-        // We only BLOCK if we have literally 0 fixtures for this date.
+        // --- READ-ONLY STRATEGY FOR USERS ---
+        // As per architecture alignment: The frontend ONLY interacts with cache for reads.
+        // Background revalidation (SWR) is disabled here to ensure instant responses.
+        // Syncing/Analysis is now strictly handled by Cron jobs.
         if (fixtures.length > 0 && !forceRefresh) {
-            console.log(`[SWR] Serving existing data for ${dateKey} while refreshing ${sport} in background...`);
-
-            (async () => {
-                try {
-                    const rawFixtures = await fetchFromApi(date, sport);
-                    if (rawFixtures && rawFixtures.length > 0) {
-                        // AI Analysis is now fully non-blocking for normal users
-                        const analyzed = await analyzeFixtures(rawFixtures, false);
-
-                        const batch = writeBatch(db);
-                        analyzed.forEach(fixture => {
-                            const docRef = doc(db, "fixtures", `${sport}-${dateKey}-${fixture.id}`);
-                            batch.set(docRef, { ...fixture, dateKey, socialPosted: fixture.socialPosted ?? false }, { merge: true });
-                        });
-                        await batch.commit();
-
-                        if (redis) {
-                            const ttl = isToday(date) || date > new Date() ? 600 : 86400;
-                            await redis.set(`fixtures:${sport}:${dateKey}`, analyzed, { ex: ttl });
-                        }
-                        console.log(`[SWR Complete] Refreshed ${analyzed.length} ${sport} fixtures for ${dateKey}`);
-                    }
-                } catch (err) {
-                    console.error("[SWR Refresh Error]", err);
-                }
-            })();
-
+            console.log(`[Read-Only] Serving existing data for ${dateKey}. Background sync skipped.`);
             return fixtures;
         }
 
@@ -821,21 +808,31 @@ export const getFixtures = async (
 
             try {
                 const batch = writeBatch(db);
-                fixtures.forEach(fixture => {
-                    const docRef = doc(db, "fixtures", `${sport}-${dateKey}-${fixture.id}`);
-                    batch.set(docRef, { ...fixture, dateKey, socialPosted: fixture.socialPosted ?? false });
-                });
-                await batch.commit();
-                console.log(`[Cache Update] Saved ${fixtures.length} analyzed ${sport} matches for ${dateKey}.`);
+                let persistCount = 0;
 
-                // Update Redis too
+                fixtures.forEach(fixture => {
+                    // Firestore: Save ONLY important data
+                    if (shouldPersist(fixture)) {
+                        const docRef = doc(db, "fixtures", `${sport}-${dateKey}-${fixture.id}`);
+                        batch.set(docRef, { ...fixture, dateKey, socialPosted: fixture.socialPosted ?? false });
+                        persistCount++;
+                    }
+                });
+
+                if (persistCount > 0) {
+                    await batch.commit();
+                    console.log(`[Firestore Update] Saved ${persistCount} important analyzed ${sport} matches for ${dateKey}.`);
+                }
+
+                // Redis: Always update with full coverage
                 if (redis) {
                     const isPastDate = new Date(dateKey) < new Date(getNairobiNow().toISOString().split('T')[0]);
-                    const ttl = isPastDate ? 86400 : 600; // 24h for past, 10m for future
+                    const ttl = isPastDate ? 86400 : 900; // 24h for past, 15m for future/today
                     await redis?.set(redisKey, fixtures, { ex: ttl });
+                    console.log(`[Redis Update] Full coverage updated for ${dateKey}.`);
                 }
             } catch (err) {
-                console.error("Cache Write Error", err);
+                console.error("Selective Persistence Error", err);
             }
         }
     }
@@ -952,24 +949,34 @@ export const syncAllFixtures = async (days: number = 7, startOffset: number = 0,
             return f; // New match, no prediction yet
         });
 
-        // 6. Batch Save to Firestore
+        // 6. Batch Save to Firestore (Selective Persistence)
         try {
             const batch = writeBatch(db);
-            allFixtures.forEach(fixture => {
-                const docRef = doc(db, "fixtures", `football-${dateKey}-${fixture.id}`);
-                batch.set(docRef, {
-                    ...fixture,
-                    dateKey,
-                    sport: "football",
-                    socialPosted: fixture.socialPosted ?? false
-                }, { merge: true });
-            });
-            await batch.commit();
+            let persistCount = 0;
 
-            // 5. Update Redis
+            allFixtures.forEach(fixture => {
+                if (shouldPersist(fixture)) {
+                    const docRef = doc(db, "fixtures", `football-${dateKey}-${fixture.id}`);
+                    batch.set(docRef, {
+                        ...fixture,
+                        dateKey,
+                        sport: "football",
+                        socialPosted: fixture.socialPosted ?? false
+                    }, { merge: true });
+                    persistCount++;
+                }
+            });
+
+            if (persistCount > 0) {
+                await batch.commit();
+                console.log(`[Sync] Saved ${persistCount} important matches to Firestore for ${dateKey}.`);
+            }
+
+            // 5. Update Redis (Full Coverage)
             if (redis) {
                 const redisKey = `fixtures:football:${dateKey}`;
-                await redis.set(redisKey, allFixtures, { ex: 600 });
+                await redis.set(redisKey, allFixtures, { ex: 900 });
+                console.log(`[Sync] Full coverage updated in Redis for ${dateKey}.`);
             }
         } catch (err) {
             console.error(`[Sync] Error saving ${dateKey}:`, err);
@@ -1027,15 +1034,24 @@ export const syncMissingCorePredictions = async (daysAhead: number = 1): Promise
 
         if (analyzed.length > 0) {
             const batch = writeBatch(db);
+            let persistCount = 0;
+
             analyzed.forEach(fixture => {
-                const docRef = doc(db, "fixtures", `football-${dateKey}-${fixture.id}`);
-                batch.set(docRef, {
-                    ...fixture,
-                    dateKey
-                }, { merge: true });
+                // By definition, if it's analyzed, it has a prediction and should be persisted
+                if (shouldPersist(fixture)) {
+                    const docRef = doc(db, "fixtures", `football-${dateKey}-${fixture.id}`);
+                    batch.set(docRef, {
+                        ...fixture,
+                        dateKey
+                    }, { merge: true });
+                    persistCount++;
+                }
             });
-            await batch.commit();
-            console.log(`[Smart Sync] Healed ${analyzed.length} matches for ${dateKey}.`);
+
+            if (persistCount > 0) {
+                await batch.commit();
+                console.log(`[Smart Sync] Healed and persisted ${persistCount} matches for ${dateKey}.`);
+            }
 
             // Update Redis
             if (redis) {

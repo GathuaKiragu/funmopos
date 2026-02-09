@@ -15,10 +15,10 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const { days = 2, deep = false } = await request.json();
+        const { days = 2, offset = 0, deep = false } = await request.json();
 
-        console.log(`[API] Manual Sync Triggered for ${days} days (Deep: ${deep})`);
-        await syncAllFixtures(days, 0, deep);
+        console.log(`[API] Manual Sync Triggered for ${days} days (Offset: ${offset}, Deep: ${deep})`);
+        await syncAllFixtures(days, offset, deep);
 
         return NextResponse.json({
             message: "Sync successful",
