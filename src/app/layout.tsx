@@ -23,6 +23,11 @@ export const metadata: Metadata = {
     default: "Funmo Tips | Premium Football Analytics & Predictions",
     template: "%s | Funmo Tips"
   },
+  icons: {
+    icon: "/icon.png",
+    shortcut: "/icon.png",
+    apple: "/apple-icon.png",
+  },
   description: "AI-powered football predictions and statistical analysis. We provide data-driven betting tips, probability modeling, and risk assessment for serious bettors.",
   keywords: ["football tips", "soccer predictions", "betting analytics", "AI football analysis", "sports data", "betting odds", "funmo tips", "kenya betting"],
   authors: [{ name: "Funmo Analytics Team" }],
