@@ -766,44 +766,39 @@ export const getFixtures = async (
         console.log(`[Fetch Triggered] Reason: ${fixtures.length === 0 ? 'Cache Miss' : forceRefresh ? 'Force Refresh' : 'Stale Detected'} for ${sport} on ${dateKey}`);
 
         // --- NEW NON-BLOCKING STRATEGY ---
-        // If we HAVE fixtures but they are stale, and we are NOT in a cron job (forceRefresh is false),
-        // we return the stale fixtures now and trigger the update in the background.
+        // We ALWAYS return what we have (even if stale) and refresh in background.
+        // We only BLOCK if we have literally 0 fixtures for this date.
         if (fixtures.length > 0 && !forceRefresh) {
-            const nairobiToday = format(getNairobiNow(), "yyyy-MM-dd");
-            const hasMissingCoreToday = fixtures.some(f => format(new Date(f.date), "yyyy-MM-dd") === nairobiToday && isCoreLeague(f.league.name) && !f.prediction);
+            console.log(`[SWR] Serving existing data for ${dateKey} while refreshing ${sport} in background...`);
 
-            if (!hasMissingCoreToday) {
-                console.log(`[SWR] Serving existing data for ${dateKey} while refreshing ${sport} in background...`);
+            (async () => {
+                try {
+                    const rawFixtures = await fetchFromApi(date, sport);
+                    if (rawFixtures && rawFixtures.length > 0) {
+                        // AI Analysis is now fully non-blocking for normal users
+                        const analyzed = await analyzeFixtures(rawFixtures, false);
 
-                (async () => {
-                    try {
-                        const rawFixtures = await fetchFromApi(date, sport);
-                        if (rawFixtures && rawFixtures.length > 0) {
-                            const analyzed = await analyzeFixtures(rawFixtures, false);
+                        const batch = writeBatch(db);
+                        analyzed.forEach(fixture => {
+                            const docRef = doc(db, "fixtures", `${sport}-${dateKey}-${fixture.id}`);
+                            batch.set(docRef, { ...fixture, dateKey, socialPosted: fixture.socialPosted ?? false }, { merge: true });
+                        });
+                        await batch.commit();
 
-                            const batch = writeBatch(db);
-                            analyzed.forEach(fixture => {
-                                const docRef = doc(db, "fixtures", `${sport}-${dateKey}-${fixture.id}`);
-                                batch.set(docRef, { ...fixture, dateKey, socialPosted: fixture.socialPosted ?? false }, { merge: true });
-                            });
-                            await batch.commit();
-
-                            if (redis) {
-                                const ttl = isToday(date) || date > new Date() ? 600 : 86400;
-                                await redis.set(`fixtures:${sport}:${dateKey}`, analyzed, { ex: ttl });
-                            }
-                            console.log(`[SWR Complete] Refreshed ${analyzed.length} ${sport} fixtures for ${dateKey}`);
+                        if (redis) {
+                            const ttl = isToday(date) || date > new Date() ? 600 : 86400;
+                            await redis.set(`fixtures:${sport}:${dateKey}`, analyzed, { ex: ttl });
                         }
-                    } catch (err) {
-                        console.error("[SWR Refresh Error]", err);
+                        console.log(`[SWR Complete] Refreshed ${analyzed.length} ${sport} fixtures for ${dateKey}`);
                     }
-                })();
+                } catch (err) {
+                    console.error("[SWR Refresh Error]", err);
+                }
+            })();
 
-                return fixtures;
-            } else {
-                console.log(`[Blocking Sync] Missing today's core predictions. Forcing refresh for ${dateKey}...`);
-            }
+            return fixtures;
         }
+
 
         const rawFixtures = await fetchFromApi(date, sport);
 
