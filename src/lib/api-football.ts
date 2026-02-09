@@ -471,20 +471,22 @@ export const analyzeFixtures = async (fixtures: Fixture[], forceRefresh: boolean
     }
 
     // Implementation of Chunking: DeepSeek might fail with too many matches in one prompt
-    const CHUNK_SIZE = 20;
+    const CHUNK_SIZE = 10; // Reduced from 20 to prevent timeouts
     const fixtureChunks = [];
     for (let i = 0; i < fixtures.length; i += CHUNK_SIZE) {
         fixtureChunks.push(fixtures.slice(i, i + CHUNK_SIZE));
     }
+
+
 
     console.log(`[AI Analysis] Total matches: ${fixtures.length}. Processing in ${fixtureChunks.length} chunks...`);
 
     const allAnalyzedFixtures: Fixture[] = [];
 
     // --- CONCURRENCY THROTTLING ---
-    // We process chunks in batches of 5 to avoid hitting API rate limits
-    // even if we have 1000+ matches (50+ chunks)
-    const BATCH_SIZE = 5;
+    // We process chunks in batches of 10 to avoid hitting API rate limits
+    // even if we have 1000+ matches (100+ chunks)
+    const BATCH_SIZE = 10;
     for (let i = 0; i < fixtureChunks.length; i += BATCH_SIZE) {
         const batch = fixtureChunks.slice(i, i + BATCH_SIZE);
         console.log(`[AI Analysis] Processing batch ${Math.floor(i / BATCH_SIZE) + 1} (${batch.length} chunks)...`);
@@ -512,6 +514,7 @@ export const analyzeFixtures = async (fixtures: Fixture[], forceRefresh: boolean
                     news_headlines: f.newsContext || "No recent news found.",
                     enriched_data: buildEnrichedContext(f.enrichedData)
                 }));
+
 
                 const prompt = `
                 You are the world's most advanced football betting algorithm, calibrated for "sharp" money. 
@@ -591,7 +594,7 @@ export const analyzeFixtures = async (fixtures: Fixture[], forceRefresh: boolean
                         'Authorization': `Bearer ${DEEPSEEK_KEY}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: 30000
+                    timeout: 60000
                 });
 
                 let content = response.data.choices[0].message.content.trim();

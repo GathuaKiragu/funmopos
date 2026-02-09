@@ -28,6 +28,11 @@ export async function GET(request: Request) {
             await getFixtures(date, "football", true, true, true);
         }
 
+        // PROACTIVE HEALING: Check for missing core predictions for TODAY and sync them
+        console.log("[Fast Sync] Checking for missing core predictions...");
+        const { syncMissingCorePredictions } = await import("@/lib/api-football");
+        await syncMissingCorePredictions(0);
+
         return NextResponse.json({ success: true, message: "Fast sync completed" });
 
     } catch (error: any) {
