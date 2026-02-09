@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import BulkSMSPanel from "@/components/admin/bulk-sms-panel";
 import UserManagementPanel from "@/components/admin/user-management-panel";
 import AutomationPanel from "@/components/admin/automation-panel";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 interface Stats {
     users: { total: number; verified: number; unverified: number };
@@ -30,6 +31,13 @@ interface Analytics {
     };
 }
 
+interface EngagementData {
+    date: string;
+    signups: number;
+    logins: number;
+    activeUsers: number;
+}
+
 export default function AdminPage() {
     const router = useRouter();
     const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -38,6 +46,7 @@ export default function AdminPage() {
     const [error, setError] = useState("");
     const [stats, setStats] = useState<Stats | null>(null);
     const [analytics, setAnalytics] = useState<Analytics | null>(null);
+    const [engagement, setEngagement] = useState<EngagementData[]>([]);
     const [refreshing, setRefreshing] = useState(false);
     const [syncing, setSyncing] = useState(false);
     const [syncDays, setSyncDays] = useState(2);
@@ -155,13 +164,29 @@ export default function AdminPage() {
         }
     };
 
+    const loadEngagement = async () => {
+        try {
+            const res = await fetch("/api/admin/user-engagement");
+            if (res.ok) {
+                const data = await res.json();
+                setEngagement(data.data || []);
+            } else if (res.status === 401) {
+                setIsAuthenticated(false);
+            }
+        } catch (err) {
+            console.error("Failed to load engagement:", err);
+        }
+    };
+
     useEffect(() => {
         if (isAuthenticated) {
             loadStats();
             loadAnalytics();
+            loadEngagement();
             const interval = setInterval(() => {
                 loadStats();
                 loadAnalytics();
+                loadEngagement();
             }, 30000); // Refresh every 30s
             return () => clearInterval(interval);
         }
@@ -403,6 +428,69 @@ export default function AdminPage() {
                             </div>
                         </div>
                     </div>
+                </div>
+
+                {/* User Engagement Graph */}
+                <div className="bg-white/5 border border-white/10 rounded-xl p-6 backdrop-blur-sm">
+                    <div className="flex items-center gap-3 mb-6">
+                        <TrendingUp className="w-5 h-5 text-yellow-500" />
+                        <h2 className="text-xl font-semibold">User Engagement (Last 30 Days)</h2>
+                    </div>
+                    {engagement.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={300}>
+                            <LineChart data={engagement}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" />
+                                <XAxis
+                                    dataKey="date"
+                                    stroke="#9ca3af"
+                                    tick={{ fill: '#9ca3af', fontSize: 12 }}
+                                    tickFormatter={(value) => {
+                                        const date = new Date(value);
+                                        return `${date.getMonth() + 1}/${date.getDate()}`;
+                                    }}
+                                />
+                                <YAxis stroke="#9ca3af" tick={{ fill: '#9ca3af', fontSize: 12 }} />
+                                <Tooltip
+                                    contentStyle={{
+                                        backgroundColor: '#1f2937',
+                                        border: '1px solid #374151',
+                                        borderRadius: '8px',
+                                        color: '#fff'
+                                    }}
+                                />
+                                <Legend wrapperStyle={{ color: '#9ca3af' }} />
+                                <Line
+                                    type="monotone"
+                                    dataKey="signups"
+                                    stroke="#22c55e"
+                                    strokeWidth={2}
+                                    name="Signups"
+                                    dot={{ fill: '#22c55e', r: 3 }}
+                                />
+                                <Line
+                                    type="monotone"
+                                    dataKey="logins"
+                                    stroke="#3b82f6"
+                                    strokeWidth={2}
+                                    name="Logins"
+                                    dot={{ fill: '#3b82f6', r: 3 }}
+                                />
+                                <Line
+                                    type="monotone"
+                                    dataKey="activeUsers"
+                                    stroke="#f59e0b"
+                                    strokeWidth={2}
+                                    name="Active Users"
+                                    dot={{ fill: '#f59e0b', r: 3 }}
+                                />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div className="text-center py-12 text-gray-400">
+                            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4" />
+                            <p>Loading engagement data...</p>
+                        </div>
+                    )}
                 </div>
 
                 {/* User Management */}
