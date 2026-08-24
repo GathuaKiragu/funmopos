@@ -6,7 +6,9 @@ export async function GET(request: Request) {
     const dateStr = searchParams.get("date");
     const sport = (searchParams.get("sport") || "football") as Sport;
     const showPast = searchParams.get("showPast") === "true";
-    const refresh = searchParams.get("refresh") === "true";
+    // Public reads must never force ingestion or analysis. Operators use protected
+    // admin/cron routes for refreshes.
+    const refresh = false;
 
     if (!dateStr) {
         return NextResponse.json({ error: "Missing date parameter" }, { status: 400 });
@@ -22,9 +24,9 @@ export async function GET(request: Request) {
         const fixtures = await getFixtures(date, sport, showPast, refresh);
         const quota = getQuotaStatus();
 
-        return NextResponse.json({ fixtures, quota });
+        return NextResponse.json({ fixtures, quota }, { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120" } });
     } catch (error: any) {
         console.error("Server API Error:", error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ error: "Unable to load fixtures" }, { status: 500 });
     }
 }

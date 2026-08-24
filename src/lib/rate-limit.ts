@@ -49,6 +49,8 @@ export async function checkRateLimit(identifier: string, limit: number = 3, wind
 
     } catch (error) {
         console.error("Rate Limit Error:", error);
-        return { success: true }; // Fail open
+        // Authentication and OTP endpoints must not become unrestricted when their
+        // shared limiter is unavailable.
+        return { success: false, msg: "Rate limiting is temporarily unavailable. Please try again shortly." };
     }
 }

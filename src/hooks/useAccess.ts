@@ -64,7 +64,7 @@ export function useAccess(): AccessState {
                 };
 
                 const userTier = (data.tier as AccessLevel) || "free";
-                const userReceiptEmail = data.receiptEmail || (data.email && data.email !== "phone-user" ? data.email : "gathua612@gmail.com");
+                const userReceiptEmail = data.receiptEmail || (data.email && data.email !== "phone-user" ? data.email : undefined);
                 const userPackageId = data.lastPackageId; // Read purchase type
 
                 let active = false;

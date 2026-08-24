@@ -17,7 +17,6 @@ import Link from "next/link";
 import { getResult } from "@/lib/utils";
 import { PerformanceModal } from "@/components/performance-modal";
 import { InstallAppButton } from "@/components/install-app-button";
-import { toast } from "sonner";
 
 // --- Types ---
 type FixtureGroup = {
@@ -98,10 +97,7 @@ export default function DashboardPage() {
     const loadData = async (force: boolean = false) => {
         if (force) setRefreshing(true);
         else setLoadingFixtures(true);
-        const { fixtures: data, quota } = await getFixtures(selectedDate, selectedSport, true, force);
-        if (quota?.deepseek_billing_empty) {
-            toast.error("DeepSeek AI is in maintenance (Billing). Predictions for some games may be delayed.", { duration: 10000 });
-        }
+        const { fixtures: data } = await getFixtures(selectedDate, selectedSport, true, force);
         setFixtures(data);
         setLoadingFixtures(false);
         setRefreshing(false);
@@ -121,27 +117,6 @@ export default function DashboardPage() {
         setSelectedLeague('ALL'); // Reset league when switching dates
     }, [selectedDate]);
 
-    const handleAnalyzeMatch = async (fixtureId: number, dateKey: string) => {
-        toast.promise(
-            fetch('/api/admin/sync-match', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ fixtureId, dateKey })
-            }).then(async res => {
-                if (!res.ok) throw new Error(await res.text());
-                return res.json();
-            }),
-            {
-                loading: 'AI is analyzing match data...',
-                success: (data) => {
-                    loadData(true); // Refresh dashboard
-                    return 'Analysis complete!';
-                },
-                error: (err) => `Analysis failed: ${err.message}`
-            }
-        );
-    };
-
     // -- Filtering & Grouping --
     const getFilteredFixtures = () => {
         return fixtures.filter(f => {
@@ -153,8 +128,7 @@ export default function DashboardPage() {
             // 1. Tab Filter (History vs Latest)
             if (activeTab === 'HISTORY') {
                 if (!isFinished) return false;
-                if (confidence <= 85) return false;
-                if (isRisky) return false;
+                if (!f.prediction) return false;
             }
             if ((activeTab === 'TODAY' || activeTab === 'UPCOMING') && isFinished) return false;
 
@@ -180,10 +154,7 @@ export default function DashboardPage() {
     const uniqueLeagues = Array.from(new Set(fixtures
         .filter(f => {
             const isFinished = ['FT', 'AET', 'PEN'].includes(f.status.short);
-            if (activeTab === 'HISTORY') {
-                // Only show leagues with VIP picks (>85% confidence, non-risky)
-                return isFinished && (f.prediction?.confidence || 0) > 85 && !f.prediction?.isRisky;
-            }
+            if (activeTab === 'HISTORY') return isFinished && Boolean(f.prediction);
             return !isFinished;
         })
         .map(f => f.league.name)
@@ -293,11 +264,6 @@ export default function DashboardPage() {
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                             <span className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em]">{fixture.league.name}</span>
-                            {confidence >= 90 && !isLocked && (
-                                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500 text-[8px] font-black uppercase tracking-tighter border border-emerald-500/20">
-                                    <CheckCircle size={8} /> Verified
-                                </span>
-                            )}
                             {isRisky && !isLocked && confidence < 90 && (
                                 <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 text-[8px] font-black uppercase tracking-tighter border border-amber-500/20">
                                     <AlertTriangle size={8} /> Risky
@@ -396,16 +362,10 @@ export default function DashboardPage() {
                                     ) : (
                                         <>
                                             {!isFinished && differenceInCalendarDays(new Date(fixture.date), new Date()) > 0 ? (
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleAnalyzeMatch(fixture.id, format(new Date(fixture.date), "yyyy-MM-dd"));
-                                                    }}
-                                                    className="flex flex-col items-center gap-1 group/btn"
-                                                >
+                                                <div className="flex flex-col items-center gap-1 text-center">
                                                     <Sparkles className="w-4 h-4 text-yellow-500/60 group-hover/btn:text-yellow-500 transition-colors" />
-                                                    <span className="text-[7px] font-black uppercase tracking-widest text-yellow-500/40 group-hover/btn:text-yellow-500">Analyze Now</span>
-                                                </button>
+                                                    <span className="text-[7px] font-black uppercase tracking-widest text-yellow-500/40 group-hover/btn:text-yellow-500">Analysis updates twice daily</span>
+                                                </div>
                                             ) : (
                                                 <>
                                                     <Sparkles className="w-3 h-3 text-yellow-500/40 mb-1" />
@@ -469,28 +429,28 @@ export default function DashboardPage() {
     // Calculate Past Performance (Last 3 days for now as quick stats)
     const activeFixturesCount = fixtures.filter(f => !['FT', 'AET', 'PEN'].includes(f.status.short)).length;
 
-    // Filter finished fixtures for stats: VIP picks only (>85% confidence, NOT risky)
+    // Never selectively hide settled predictions from the customer-facing record.
     const finishedFixtures = fixtures.filter(f => {
         const isFinished = ['FT', 'AET', 'PEN'].includes(f.status.short);
-        const confidence = f.prediction?.confidence || 0;
-        const isRisky = f.prediction?.isRisky || false;
-        return isFinished && confidence > 85 && !isRisky;
+        return isFinished && Boolean(f.prediction);
     });
 
     // Calculate stats for current view (only quality picks)
     const statsTotal = finishedFixtures.length;
     const statsWon = finishedFixtures.filter(f => getResult(f.prediction, f) === 'WON').length;
     const statsLost = finishedFixtures.filter(f => getResult(f.prediction, f) === 'LOST').length;
+    const settledCount = statsWon + statsLost;
+    const settledWinRate = settledCount ? Math.round((statsWon / settledCount) * 100) : null;
 
     // Note: VIP win rate is now loaded from 7-day performance data via loadVipPerformance()
     // This provides a more stable and accurate metric than single-day calculations
     const isHistoryView = activeTab === 'HISTORY' || differenceInCalendarDays(selectedDate, new Date()) < 0;
 
     return (
-        <div className="min-h-screen bg-black text-white p-4 pb-20 md:p-8">
+        <div className="app-shell min-h-screen text-white p-4 pb-20 md:p-8">
             <div className="max-w-4xl mx-auto space-y-8">
                 {/* Dashboard Navigation */}
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between border-b border-white/10 pb-5">
                     <Link href="/" className="inline-flex items-center text-gray-500 hover:text-white transition-colors">
                         <ChevronLeft className="w-4 h-4 mr-2" /> Back to Home
                     </Link>
@@ -542,9 +502,9 @@ export default function DashboardPage() {
                                 <CheckCircle size={16} className="text-emerald-500" />
                             </div>
                             <div>
-                                <p className="text-[10px] font-black uppercase text-emerald-500 tracking-widest">VIP Performance Tracker</p>
+                                <p className="text-[10px] font-black uppercase text-emerald-500 tracking-widest">Complete performance record</p>
                                 <p className="text-[10px] text-emerald-500/80 leading-relaxed">
-                                    Showing only our <span className="font-bold text-emerald-400">VIP picks</span> (over 85% confidence, non-risky). This reflects our highest-tier accuracy.
+                                    Every settled prediction is retained here, including losses. Use the full record—not a selective highlight reel—to judge performance.
                                 </p>
                             </div>
                         </div>
@@ -552,7 +512,7 @@ export default function DashboardPage() {
                 )}
 
                 {/* 1. Stats Header (Dynamic based on View) */}
-                <div className={`grid ${isHistoryView ? 'grid-cols-4' : 'grid-cols-2 md:grid-cols-4'} gap-4 p-4 bg-white/5 rounded-2xl border border-white/10`}>
+                <div className={`premium-surface grid ${isHistoryView ? 'grid-cols-4' : 'grid-cols-2 md:grid-cols-4'} gap-4 p-4 rounded-2xl`}>
                     {isHistoryView ? (
                         <>
                             <div className="text-center md:text-left">
@@ -568,8 +528,8 @@ export default function DashboardPage() {
                                 <p className="text-xl md:text-2xl font-black text-red-500">{statsLost}</p>
                             </div>
                             <div className="text-center md:text-left">
-                                <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Win Rate</p>
-                                <p className="text-xl md:text-2xl font-black text-yellow-500">{vipWinRate}%</p>
+                                <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Settled rate</p>
+                                <p className="text-xl md:text-2xl font-black text-yellow-500">{settledWinRate === null ? '—' : `${settledWinRate}%`}</p>
                             </div>
                         </>
                     ) : (
@@ -581,13 +541,13 @@ export default function DashboardPage() {
                             <PerformanceModal trigger={
                                 <div className="cursor-pointer hover:bg-white/5 p-2 -m-2 rounded-lg transition-colors group">
                                     <div className="flex items-center gap-1">
-                                        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold group-hover:text-white transition-colors">VIP Accuracy (7d)</p>
+                                        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold group-hover:text-white transition-colors">Settled record (7d)</p>
                                         <ChevronRight className="w-3 h-3 text-white/20 group-hover:text-yellow-500 transition-colors" />
                                     </div>
                                     {loadingVipStats ? (
                                         <Activity className="w-4 h-4 animate-spin text-yellow-500 mt-1" />
                                     ) : (
-                                        <p className="text-2xl font-black text-emerald-500">{vipWinRate}%</p>
+                                        <p className="text-2xl font-black text-emerald-500">{vipWinRate ? `${vipWinRate}%` : '—'}</p>
                                     )}
                                 </div>
                             } />

@@ -9,9 +9,7 @@ export async function POST(request: Request) {
         const body = await request.json().catch(() => ({}));
         const { phone, captchaToken, type } = body; // type is 'LOGIN' or 'SIGNUP'
 
-        console.log(`API: OTP Request for phone: ${phone}, hasToken: ${!!captchaToken}`);
-
-        if (!phone) {
+        if (typeof phone !== 'string' || phone.length > 32) {
             return NextResponse.json({ error: "Phone number is required" }, { status: 400 });
         }
 
@@ -33,7 +31,7 @@ export async function POST(request: Request) {
 
             if (!verifyData.success) {
                 console.error("reCAPTCHA Verification Failed:", JSON.stringify(verifyData, null, 2));
-                return NextResponse.json({ error: "Captcha verification failed", details: verifyData }, { status: 400 });
+                return NextResponse.json({ error: "Captcha verification failed" }, { status: 400 });
             }
             console.log("reCAPTCHA Verified Successfully.");
         } catch (error: any) {
@@ -51,7 +49,7 @@ export async function POST(request: Request) {
             formattedPhone = "+254" + formattedPhone;
         }
 
-        console.log(`API: Sending OTP to ${formattedPhone} (Original: ${phone}, Type: ${type})`);
+        if (!/^\+254\d{9}$/.test(formattedPhone)) return NextResponse.json({ error: "Enter a valid Kenyan phone number" }, { status: 400 });
 
         // 0b. Check if user exists (to separate Login vs Signup)
         const auth = getAdminAuth();
@@ -112,6 +110,7 @@ export async function POST(request: Request) {
         try {
             await sendSasaSMS(formattedPhone, message);
         } catch (smsError: any) {
+            await getAdminDb().collection("otps").doc(formattedPhone).delete().catch(() => undefined);
             console.error("API: SMS Sending Failed:", smsError);
             return NextResponse.json({
                 error: "Failed to send SMS",
@@ -125,9 +124,7 @@ export async function POST(request: Request) {
         console.error("API: Error sending OTP:", error);
         return NextResponse.json({
             error: "Internal Server Error",
-            message: error.message,
-            details: error.toString(),
-            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+            message: "Please try again later"
         }, { status: 500 });
     }
 }

@@ -36,8 +36,34 @@ function checkRateLimit(key: string, limit: { maxRequests: number; windowMs: num
     return true;
 }
 
-export function middleware(request: NextRequest) {
+function base64UrlToBytes(value: string) {
+    const base64 = value.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - value.length % 4) % 4);
+    return Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+}
+
+async function isValidAdminSession(token?: string) {
+    const secret = process.env.ADMIN_SESSION_SECRET;
+    if (!token || !secret) return false;
+    const [payload, signature] = token.split('.');
+    if (!payload || !signature) return false;
+    try {
+        const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
+        const validSignature = await crypto.subtle.verify('HMAC', key, base64UrlToBytes(signature), new TextEncoder().encode(payload));
+        const parsed = JSON.parse(new TextDecoder().decode(base64UrlToBytes(payload)));
+        return validSignature && parsed.role === 'admin' && Number.isInteger(parsed.exp) && parsed.exp > Math.floor(Date.now() / 1000);
+    } catch { return false; }
+}
+
+export async function middleware(request: NextRequest) {
     const pathname = request.nextUrl.pathname;
+
+    // Every operational route is protected again in its handler. Blocking absent or
+    // malformed sessions here prevents accidental exposure when a new route is added.
+    if (pathname.startsWith('/api/admin/') && pathname !== '/api/admin/auth') {
+        if (!await isValidAdminSession(request.cookies.get('admin_session')?.value)) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+    }
 
     // Only apply rate limiting to API routes
     if (!pathname.startsWith('/api/')) {

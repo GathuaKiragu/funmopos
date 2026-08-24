@@ -1,8 +1,12 @@
 {
     "crons": [
         {
+            "path": "/api/cron/deep-analysis",
+            "schedule": "0 * * * *"
+        },
+        {
             "path": "/api/cron/daily-sync",
-            "schedule": "0 21,5,7 * * *"
+            "schedule": "0 5,7,21 * * *"
         },
         {
             "path": "/api/cron/fast-sync",
@@ -17,7 +21,7 @@
             "schedule": "0 * * * *"
         },
         {
-            "path": "/api/admin/detect-wins",
+            "path": "/api/cron/detect-wins",
             "schedule": "0 * * * *"
         }
     ]

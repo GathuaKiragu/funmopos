@@ -5,8 +5,6 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
 import { PaystackButton } from "react-paystack";
-import { doc, updateDoc, setDoc, collection, serverTimestamp } from "firebase/firestore";
-import { db } from "@/lib/firebase";
 import { Check, X, RefreshCw } from "lucide-react";
 import { useLocation } from "@/hooks/useLocation";
 import { useAccess } from "@/hooks/useAccess";
@@ -60,44 +58,14 @@ export function PaymentModal({ children }: PaymentModalProps) {
         return config.packages.find(p => p.id === id);
     };
 
-    const handleSuccess = async (reference: any) => {
+    const handleSuccess = async (reference: { reference?: string }) => {
         if (!user || !selectedPackageId) return;
 
-        const pkg = getPackage(selectedPackageId);
-        if (!pkg) return;
-
         try {
-            const userRef = doc(db, "users", user.uid);
-            const now = new Date();
-            const expiry = new Date(now);
-
-            // Calculate expiry: Today + (days - 1)
-            // If 1 day: Today + 0.
-            // If 3 days: Today + 2.
-            expiry.setDate(expiry.getDate() + (pkg.days - 1));
-            expiry.setHours(23, 59, 59, 999);
-
-            await setDoc(userRef, {
-                subscriptionStatus: "active",
-                tier: "vip", // All paid packages grant VIP access
-                subscriptionExpiry: expiry,
-                lastPaymentRef: reference.reference,
-                lastPackageId: selectedPackageId,
-                updatedAt: serverTimestamp()
-            }, { merge: true });
-
-            const txRef = doc(collection(db, "transactions"));
-            await setDoc(txRef, {
-                userId: user.uid,
-                amount: processingAmount,
-                currency: "KES",
-                packageId: selectedPackageId,
-                tier: "vip",
-                reference: reference.reference,
-                status: "success",
-                provider: "paystack",
-                createdAt: serverTimestamp()
-            });
+            if (!reference.reference) throw new Error("Payment reference is missing");
+            const token = await user.getIdToken();
+            const response = await fetch("/api/payments/verify", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ reference: reference.reference, packageId: selectedPackageId }) });
+            if (!response.ok) throw new Error((await response.json()).error || "Payment could not be verified");
 
             setSuccess(true);
             setTimeout(() => {
@@ -107,7 +75,7 @@ export function PaymentModal({ children }: PaymentModalProps) {
             }, 2000);
 
         } catch (error) {
-            console.error("Payment Success Error:", error);
+            console.error("Payment verification error", error);
         }
     };
 
@@ -133,6 +101,10 @@ export function PaymentModal({ children }: PaymentModalProps) {
         text: `Pay ${currentSymbol}${currentPrice}`,
         onSuccess: handleSuccess,
         onClose: handleClose,
+        metadata: { custom_fields: [
+            { display_name: "Funmo user", variable_name: "user_id", value: user?.uid || "" },
+            { display_name: "Funmo plan", variable_name: "package_id", value: selectedPackageId || "" },
+        ] },
     };
 
     if (!user) return null;

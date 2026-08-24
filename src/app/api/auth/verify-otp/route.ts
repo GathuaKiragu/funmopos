@@ -43,6 +43,7 @@ export async function POST(request: Request) {
         }
 
         if (!otpData || Date.now() > otpData.expiresAt) {
+            await otpRef.delete();
             return NextResponse.json({ error: "OTP has expired" }, { status: 400 });
         }
 

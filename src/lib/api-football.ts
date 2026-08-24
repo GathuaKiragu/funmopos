@@ -14,6 +14,7 @@ import {
 } from "firebase/firestore";
 import axios from "axios";
 import { redis, isRedisEnabled } from "@/lib/redis";
+import { createStatisticalPrediction } from "@/lib/prediction-engine";
 
 export type Sport = "football" | "basketball";
 
@@ -472,7 +473,9 @@ const fetchTeamNews = async (home: string, away: string): Promise<string> => {
 
 
 // AI Analysis with DeepSeek (Enhanced with Football Highlights API)
-export const analyzeFixtures = async (fixtures: Fixture[], forceRefresh: boolean = false): Promise<Fixture[]> => {
+// Retained temporarily for migration reference. It is never invoked: external LLM
+// calls must only happen in the scheduled analysis pipeline below.
+const legacyAnalyzeFixtures = async (fixtures: Fixture[], forceRefresh: boolean = false): Promise<Fixture[]> => {
     if (!DEEPSEEK_KEY || fixtures.length === 0) return fixtures;
 
     const quotas = checkQuotas();
@@ -686,6 +689,13 @@ export const analyzeFixtures = async (fixtures: Fixture[], forceRefresh: boolean
     return allAnalyzedFixtures;
 };
 
+/**
+ * Creates only the explainable statistical baseline during ingestion. Deep AI
+ * commentary is persisted separately by /api/cron/deep-analysis twice daily.
+ */
+export const analyzeFixtures = async (fixtures: Fixture[]): Promise<Fixture[]> =>
+    fixtures.map(fixture => ({ ...fixture, prediction: fixture.prediction || createStatisticalPrediction(fixture) }));
+
 
 export const getFixtures = async (
     date: Date,
@@ -803,7 +813,7 @@ export const getFixtures = async (
             } else {
                 // Run AI Analysis immediately on new data
                 console.log(`[AI Analysis] Processing ${rawFixtures.length} ${sport} matches with DeepSeek...`);
-                fixtures = await analyzeFixtures(rawFixtures, forceRefresh);
+                fixtures = await analyzeFixtures(rawFixtures);
             }
 
             try {
@@ -1030,7 +1040,7 @@ export const syncMissingCorePredictions = async (daysAhead: number = 1): Promise
         console.log(`[Smart Sync] Found ${missingAnalysis.length} core matches missing predictions for ${dateKey}. Healing...`);
 
         // 3. Analyze & Save
-        const analyzed = await analyzeFixtures(missingAnalysis, false);
+        const analyzed = await analyzeFixtures(missingAnalysis);
 
         if (analyzed.length > 0) {
             const batch = writeBatch(db);

@@ -87,7 +87,7 @@ export function MatchAnalysisModal({ fixture, trigger }: MatchAnalysisModalProps
                             confidence > 85 ? 'border-yellow-500/30 bg-yellow-500/10' :
                                 'border-emerald-500/30 bg-emerald-500/10'
                             } text-center w-full`}>
-                            <p className="text-[10px] uppercase tracking-widest font-black opacity-60 mb-1">AI Recommendation</p>
+                            <p className="text-[10px] uppercase tracking-widest font-black opacity-60 mb-1">Model selection</p>
                             <p className={`text-xl font-black uppercase ${isRisky ? 'text-amber-500' :
                                 confidence > 85 ? 'text-yellow-500' :
                                     'text-emerald-500'
@@ -99,7 +99,7 @@ export function MatchAnalysisModal({ fixture, trigger }: MatchAnalysisModalProps
                     </div>
                     <div className="mt-3 flex items-center gap-2">
                         <Brain className="w-4 h-4 text-purple-400" />
-                        <span className="text-xs font-bold text-gray-400">Winning Chance: <span className="text-white">{confidence}%</span></span>
+                        <span className="text-xs font-bold text-gray-400">Model estimate: <span className="text-white">{confidence}%</span></span>
                     </div>
 
 

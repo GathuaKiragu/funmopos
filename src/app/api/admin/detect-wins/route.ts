@@ -1,24 +1,15 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/firebase";
-import {
-    collection,
-    query,
-    where,
-    getDocs,
-    updateDoc,
-    doc,
-    limit,
-    orderBy
-} from "firebase/firestore";
+import { getAdminDb } from "@/lib/firebase-admin";
 import { getResult } from "@/lib/utils";
 import { sendTelegramMessage } from "@/lib/telegram-service";
 import { postToX, postToFacebook } from "@/lib/social-media-service";
 import { format } from "date-fns";
 
-export async function POST(request: Request) {
+async function run(request: Request, suppliedSecret?: string | null) {
     try {
-        const { secret } = await request.json();
-        if (secret !== process.env.CRON_SECRET) {
+        const cronSecret = process.env.CRON_SECRET;
+        const secret = suppliedSecret || new URL(request.url).searchParams.get("secret");
+        if (!cronSecret || (secret !== cronSecret && request.headers.get("authorization") !== `Bearer ${cronSecret}`)) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
@@ -26,15 +17,9 @@ export async function POST(request: Request) {
 
         // 1. Get finished matches from the last 2 days that haven't been posted
         // We look at the last 2 days to catch late-night games
-        const fixturesRef = collection(db, "fixtures");
-        const q = query(
-            fixturesRef,
-            where("status.short", "in", ["FT", "AET", "PEN"]),
-            where("socialPosted", "==", false),
-            limit(10) // Process in small batches
-        );
-
-        const querySnapshot = await getDocs(q);
+        const querySnapshot = await getAdminDb().collection("fixtures")
+            .where("status.short", "in", ["FT", "AET", "PEN"])
+            .where("socialPosted", "==", false).limit(10).get();
         const results = [];
 
         for (const docSnap of querySnapshot.docs) {
@@ -89,7 +74,7 @@ Data-driven precision. Join the winning team at funmotips.com
                 const fbPost = await postToFacebook(plainText, imageUrl);
 
                 // Mark as posted regardless of success to avoid spamming on partial failures
-                await updateDoc(doc(db, "fixtures", docSnap.id), {
+                await docSnap.ref.update({
                     socialPosted: true,
                     socialPostedAt: Date.now()
                 });
@@ -101,7 +86,7 @@ Data-driven precision. Join the winning team at funmotips.com
                 });
             } else if (result === 'LOST' || result === 'VOID') {
                 // Also mark as posted if lost, so we don't check again
-                await updateDoc(doc(db, "fixtures", docSnap.id), {
+                await docSnap.ref.update({
                     socialPosted: true
                 });
             }
@@ -117,4 +102,10 @@ Data-driven precision. Join the winning team at funmotips.com
         console.error("[WinDetector] Error:", error.message);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
+}
+
+export async function GET(request: Request) { return run(request); }
+export async function POST(request: Request) {
+    const body = await request.json().catch(() => ({}));
+    return run(request, body.secret);
 }

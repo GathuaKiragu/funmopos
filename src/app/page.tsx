@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { ShieldCheck, Trophy, Activity, Lock, AlertTriangle, User as UserIcon, CheckCircle, XCircle, Star, Quote } from "lucide-react";
+import { ShieldCheck, Trophy, Activity, Lock, AlertTriangle, User as UserIcon, CheckCircle, XCircle, Quote, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { useEffect, useState } from "react";
@@ -43,17 +43,17 @@ export default function Home() {
   }, [selectedSport]);
 
   return (
-    <div className="min-h-screen bg-black text-foreground flex flex-col font-sans selection:bg-yellow-500/30">
+    <div className="app-shell min-h-screen text-foreground flex flex-col font-sans">
 
       {/* Navbar */}
-      <header className="fixed top-0 w-full z-50 border-b border-white/5 bg-black/50 backdrop-blur-xl">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
+      <header className="fixed top-0 w-full z-50 border-b border-white/10 bg-[#080b12]/80 backdrop-blur-xl">
+        <div className="container mx-auto px-4 h-[72px] flex items-center justify-between">
           <div className="flex items-center gap-2">
             {/* 
               User Instructions: 
               Please save your logo image as "funmo-logo.png" inside the "public" folder.
             */}
-            <img src="/funmo-logo.png" alt="Funmo Tips" className="h-16 w-auto object-contain" />
+            <img src="/funmo-logo.png" alt="Funmo Tips" className="h-14 w-auto object-contain" />
           </div>
           <div className="flex items-center gap-4">
             {user ? (
@@ -84,11 +84,11 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="flex-1 pt-16">
+      <main className="flex-1 pt-[72px]">
 
         {/* Hero Section */}
-        <section className="relative py-20 lg:py-32 overflow-hidden bg-black">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-yellow-500/10 via-black to-black"></div>
+        <section className="relative py-16 lg:py-28 overflow-hidden">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_20%,rgba(238,189,70,.14),transparent_28rem)]"></div>
 
           <div className="container mx-auto px-4 relative z-10">
             <div className="flex flex-col lg:flex-row items-center gap-12 lg:gap-20">
@@ -99,25 +99,25 @@ export default function Home() {
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-yellow-500"></span>
                   </span>
-                  Trusted by 10,000+ Bettors
+                  Statistical football analysis
                 </div>
 
-                <h1 className="text-5xl lg:text-7xl font-extrabold tracking-tight text-white mb-6 leading-tight">
-                  VIP picks achieve <span className="text-yellow-500">73% accuracy</span>.
+                <h1 className="text-5xl lg:text-7xl font-extrabold tracking-[-0.055em] text-white mb-6 leading-[.98]">
+                  Understand the data <span className="text-yellow-500">before you decide</span>.
                 </h1>
 
                 <p className="text-lg lg:text-xl text-gray-400 mb-4 leading-relaxed">
-                  Stop gambling based on feelings. Get data-driven predictions powered by AI and beat the bookies.
+                  Explore fixture data, model estimates, and clear risk flags. Predictions are not guarantees.
                 </p>
 
                 <p className="text-sm text-gray-500 mb-10 leading-relaxed">
-                  <span className="text-yellow-500 font-semibold">VIP picks</span> are predictions with &gt;85% confidence and no risk warnings. Performance based on last 7 days of finished matches.
+                  Every estimate shows its evidence level. When data is limited, we flag it rather than overstating certainty.
                 </p>
 
                 <div className="flex flex-col sm:flex-row items-center lg:justify-start justify-center gap-4 mb-16">
                   <Link href="/signup" className="w-full sm:w-auto">
                     <Button size="lg" className="h-14 px-8 bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-lg rounded-full w-full  shadow-lg shadow-yellow-500/20 transition-all hover:scale-105">
-                      View VIP Picks
+                      Explore today&apos;s analysis
                     </Button>
                   </Link>
                   <Button
@@ -128,38 +128,38 @@ export default function Home() {
                       document.getElementById('free-picks')?.scrollIntoView({ behavior: 'smooth' });
                     }}
                   >
-                    View Free Demo
+                    See sample estimates
                   </Button>
                 </div>
 
                 {/* Trust Signals */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8 border-t border-white/10 pt-8">
                   <div>
-                    <p className="text-3xl font-bold text-white">18/25</p>
-                    <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">Correct Picks (Last 25)</p>
+                    <p className="text-3xl font-bold text-white">1X2</p>
+                    <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">Match-outcome estimates</p>
                   </div>
                   <div>
-                    <p className="text-3xl font-bold text-white">73%</p>
-                    <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">VIP Accuracy</p>
+                    <p className="text-3xl font-bold text-white">Clear</p>
+                    <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">Risk labels</p>
                   </div>
                   <div>
-                    <p className="text-3xl font-bold text-white">10K+</p>
-                    <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">Analyzed Daily</p>
+                    <p className="text-3xl font-bold text-white">EAT</p>
+                    <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">Kickoff times</p>
                   </div>
                   <div>
-                    <p className="text-3xl font-bold text-white">24/7</p>
-                    <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">Live AI</p>
+                    <p className="text-3xl font-bold text-white">2×</p>
+                    <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">Analysis refreshes daily</p>
                   </div>
                 </div>
               </div>
 
               {/* Hero Image */}
               <div className="flex-1 w-full max-w-lg lg:max-w-none relative animate-in fade-in zoom-in duration-1000">
-                <div className="absolute -inset-4 bg-yellow-500/20 blur-3xl opacity-20 rounded-full"></div>
+                <div className="absolute -inset-3 bg-yellow-500/20 blur-3xl opacity-30 rounded-full"></div>
                 <img
                   src="/hero-real.jpg"
                   alt="Soccer Player Action Shot"
-                  className="relative w-full h-auto rounded-2xl shadow-2xl hover:scale-105 transition-transform duration-700 opacity-90 grayscale-[30%] brightness-[0.8]"
+                  className="relative w-full h-auto rounded-[2rem] border border-white/10 shadow-2xl transition-transform duration-700 opacity-90 grayscale-[20%] brightness-[.78]"
                 />
               </div>
 
@@ -175,12 +175,10 @@ export default function Home() {
           <div className="container mx-auto px-4">
             <div className="flex flex-col lg:flex-row items-center justify-between gap-8 mb-12">
               <div className="text-left max-w-lg">
-                <div className="inline-block px-3 py-1 bg-yellow-500 text-black text-xs font-bold uppercase rounded mb-3">
-                  Free AI Demo
-                </div>
-                <h3 className="text-3xl font-bold text-white mb-4">Today's Predictions</h3>
+                <p className="eyebrow mb-3">Open data sample</p>
+                <h3 className="text-3xl font-bold text-white mb-4">Today&apos;s model estimates</h3>
                 <p className="text-gray-400">
-                  See the AI in action. Here are a few <span className="text-white font-bold">free picks</span> for today to prove our value.
+                  See how a fixture, estimate, evidence note, and risk flag are presented before creating an account.
                 </p>
               </div>
 
@@ -200,7 +198,7 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {loading ? (
                 <div className="col-span-full flex justify-center py-12">
                   <Activity className="w-8 h-8 animate-spin text-yellow-500" />
@@ -212,7 +210,7 @@ export default function Home() {
                     league={fixture.league.name}
                     match={`${fixture.homeTeam.name} vs ${fixture.awayTeam.name}`}
                     date={fixture.date}
-                    prediction={fixture.prediction?.picked || "ANALYZING..."}
+                    prediction={fixture.prediction?.picked || "No estimate available"}
                     confidence={fixture.prediction?.confidence || 0}
                     reasoning={fixture.prediction?.reasoning}
                     status={fixture.prediction?.isRisky ? 'nobet' : 'free'}
@@ -228,25 +226,23 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Testimonials Section */}
+        {/* Trust section */}
         <section className="py-20 border-t border-white/5">
           <div className="container mx-auto px-4">
             <div className="text-center mb-16">
-              <h2 className="text-3xl font-bold text-white mb-4">Trusted by Winners</h2>
-              <p className="text-gray-400">Join the community beating the odds everyday.</p>
+              <h2 className="text-3xl font-bold text-white mb-4">Built for informed decisions</h2>
+              <p className="text-gray-400">We show uncertainty and results—not promises.</p>
             </div>
 
             <div className="grid md:grid-cols-3 gap-8">
               {[
-                { name: "Kevin M.", role: "Bettor since 2023", text: "I was skeptical at first, but the accuracy is real. Won 5 slips in a row last week. The AI analysis saves me hours of research." },
-                { name: "Sarah K.", role: "Premium Member", text: "Finally an app that doesn't just guess. The transparency on wins and losses is what built my trust. Funmo is my go-to tool." },
-                { name: "David O.", role: "Professional Bettor", text: "The 'No Bet' warnings are just as valuable as the picks. Saved me from losing money on risky games I would have bet on otherwise." }
+                { name: "Evidence first", role: "Methodology", text: "Predictions are generated from available statistical inputs. We do not present missing information as fact." },
+                { name: "Results stay visible", role: "Performance", text: "Settled predictions remain in history, including losses, so you can judge the record for yourself." },
+                { name: "No-bet is a valid outcome", role: "Risk management", text: "When evidence is thin or conflicting, we show caution instead of forcing a recommendation." }
               ].map((t, i) => (
                 <div key={i} className="p-8 bg-white/5 border border-white/5 rounded-2xl relative">
                   <Quote className="w-8 h-8 text-yellow-500/20 absolute top-6 right-6" />
-                  <div className="flex gap-1 mb-4">
-                    {[...Array(5)].map((_, i) => <Star key={i} className="w-4 h-4 text-yellow-500 fill-yellow-500" />)}
-                  </div>
+                  <ShieldCheck className="w-7 h-7 text-yellow-500 mb-4" />
                   <p className="text-gray-300 mb-6 leading-relaxed">"{t.text}"</p>
                   <div>
                     <p className="text-white font-bold">{t.name}</p>
@@ -332,17 +328,17 @@ export default function Home() {
               <div className="flex flex-col items-center text-center relative z-10">
                 <div className="w-16 h-16 bg-black rounded-2xl flex items-center justify-center border border-white/10 mb-6 text-2xl font-bold text-yellow-500 shadow-lg shadow-yellow-500/5">1</div>
                 <h3 className="text-xl font-bold text-white mb-3">We Analyze</h3>
-                <p className="text-gray-400 text-sm leading-relaxed max-w-xs mx-auto">Our algorithms scrape data from 50+ leagues, processing player stats, team form, and historical trends.</p>
+                <p className="text-gray-400 text-sm leading-relaxed max-w-xs mx-auto">We collect available fixture and statistical data, then show clearly when the evidence is limited.</p>
               </div>
               <div className="flex flex-col items-center text-center relative z-10">
                 <div className="w-16 h-16 bg-black rounded-2xl flex items-center justify-center border border-white/10 mb-6 text-2xl font-bold text-yellow-500 shadow-lg shadow-yellow-500/5">2</div>
                 <h3 className="text-xl font-bold text-white mb-3">We Suggest</h3>
-                <p className="text-gray-400 text-sm leading-relaxed max-w-xs mx-auto">Our AI identifies matches where the bookmakers have miscalculated the odds, flagging high-value opportunities.</p>
+                <p className="text-gray-400 text-sm leading-relaxed max-w-xs mx-auto">The statistical model provides an estimate; scheduled AI review explains supporting factors and cautions.</p>
               </div>
               <div className="flex flex-col items-center text-center relative z-10">
                 <div className="w-16 h-16 bg-black rounded-2xl flex items-center justify-center border border-white/10 mb-6 text-2xl font-bold text-yellow-500 shadow-lg shadow-yellow-500/5">3</div>
-                <h3 className="text-xl font-bold text-white mb-3">You Profit</h3>
-                <p className="text-gray-400 text-sm leading-relaxed max-w-xs mx-auto">You get clear, actionable tips. Place your bets with confidence and watch your bankroll grow.</p>
+                <h3 className="text-xl font-bold text-white mb-3">You Decide</h3>
+                <p className="text-gray-400 text-sm leading-relaxed max-w-xs mx-auto">Review the evidence, limits, and history before making any independent decision.</p>
               </div>
             </div>
 
@@ -393,7 +389,7 @@ export default function Home() {
                         league={fixture.league.name}
                         match={`${fixture.homeTeam.name} vs ${fixture.awayTeam.name}`}
                         date={fixture.date}
-                        prediction={fixture.prediction?.picked || "ANALYZING..."}
+                        prediction={fixture.prediction?.picked || "No estimate available"}
                         confidence={fixture.prediction?.confidence || 0}
                         reasoning={fixture.prediction?.reasoning}
                         status={'free'}
@@ -425,7 +421,7 @@ export default function Home() {
           <p className="max-w-2xl mx-auto mb-4 leading-relaxed">
             <span className="font-semibold text-gray-400">Responsible Gambling:</span> Funmo Tips is an informational platform. We do not accept bets.
             All predictions are based on statistical analysis and do not guarantee outcomes.
-            <span className="text-yellow-500 font-semibold"> VIP accuracy (73%)</span> is calculated from picks with &gt;85% confidence over the last 7 days.
+            Performance metrics are shown only when there is enough settled history to calculate them responsibly.
             Past performance does not guarantee future results. 18+ Only. Gamble responsibly.
           </p>
           <p>&copy; {new Date().getFullYear()} Funmo Analytics. Nairobi, Kenya.</p>
@@ -456,7 +452,7 @@ function Card({ league, match, date, prediction, confidence, reasoning, status, 
   const reasoningPoints = Array.isArray(reasoning) ? reasoning : (reasoning ? [reasoning] : []);
 
   return (
-    <div className={`relative p-4 rounded-xl border ${isNoBet ? 'border-red-500/20 bg-red-900/5' : 'border-white/10 bg-white/5'} flex flex-col justify-between overflow-hidden group`}>
+    <div className={`premium-surface relative p-5 rounded-2xl ${isNoBet ? 'border-amber-500/25 bg-amber-950/10' : ''} flex flex-col justify-between overflow-hidden group transition-transform duration-300 hover:-translate-y-1`}>
 
       {/* Premium Lock Overlay (Hard Gate) */}
       {isLocked && (
@@ -493,7 +489,7 @@ function Card({ league, match, date, prediction, confidence, reasoning, status, 
         {isNoBet ? (
           <span className="text-xs font-bold text-red-500 border border-red-500/20 px-2 py-1 rounded bg-red-500/10">RISK DETECTED</span>
         ) : (
-          <span className="text-xs font-bold text-emerald-500">{confidence}% Winning Chance</span>
+          <span className="text-xs font-bold text-emerald-400">{confidence ? `${confidence}% model estimate` : 'Evidence pending'}</span>
         )}
       </div>
 
@@ -513,7 +509,7 @@ function Card({ league, match, date, prediction, confidence, reasoning, status, 
           <div className="mt-3 pt-3 border-t border-white/5">
             <div className="flex items-center gap-1 mb-1.5">
               <span className="text-yellow-500 text-xs">💡</span>
-              <span className="text-xs font-bold text-gray-400 uppercase tracking-wide">Analysis</span>
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-wide">Evidence note</span>
             </div>
             <ul className="space-y-1">
               {reasoningPoints.map((point, i) => (

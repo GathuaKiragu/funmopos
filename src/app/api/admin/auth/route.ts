@@ -1,24 +1,25 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { adminCookieName, adminSessionMaxAge, createAdminSession } from '@/lib/admin-auth';
 
-const ADMIN_PASSWORD = 'admin3343535$$#@sdsd';
-const SESSION_COOKIE = 'admin_session';
 
 export async function POST(request: Request) {
     try {
         const { password } = await request.json();
 
-        if (password === ADMIN_PASSWORD) {
-            // Create a simple session token
-            const sessionToken = Buffer.from(`admin:${Date.now()}`).toString('base64');
+        const adminPassword = process.env.ADMIN_PASSWORD;
+        if (!adminPassword) throw new Error('ADMIN_PASSWORD is not configured');
+
+        if (typeof password === 'string' && password.length <= 256 && password === adminPassword) {
+            const sessionToken = createAdminSession();
 
             // Set cookie
             const cookieStore = await cookies();
-            cookieStore.set(SESSION_COOKIE, sessionToken, {
+            cookieStore.set(adminCookieName, sessionToken, {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: 'strict',
-                maxAge: 60 * 60 * 24, // 24 hours
+                maxAge: adminSessionMaxAge,
             });
 
             return NextResponse.json({ success: true });
@@ -32,6 +33,6 @@ export async function POST(request: Request) {
 
 export async function DELETE() {
     const cookieStore = await cookies();
-    cookieStore.delete(SESSION_COOKIE);
+    cookieStore.delete(adminCookieName);
     return NextResponse.json({ success: true });
 }

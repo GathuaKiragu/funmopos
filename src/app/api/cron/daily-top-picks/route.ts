@@ -14,11 +14,13 @@ export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
 
-        // 1. Verify Cron Secret (if configured)
+        // Vercel Cron sends the secret as a bearer token. Query support is retained
+        // only for the protected manual operational trigger.
         const secret = searchParams.get('secret');
+        const authorization = request.headers.get('authorization');
         const testMode = searchParams.get('test') === 'true';
 
-        if (!testMode && CRON_SECRET && secret !== CRON_SECRET) {
+        if (!CRON_SECRET || (secret !== CRON_SECRET && authorization !== `Bearer ${CRON_SECRET}`)) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 

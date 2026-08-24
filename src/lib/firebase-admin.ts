@@ -1,30 +1,12 @@
 import "server-only";
 import * as admin from "firebase-admin";
-import * as fs from "fs";
-import * as path from "path";
-
-const LOG_FILE = "/tmp/firebase-admin-debug.log";
-
-function logDebug(message: string) {
-    const timestamp = new Date().toISOString();
-    const logMessage = `[${timestamp}] ${message}\n`;
-    try {
-        fs.appendFileSync(LOG_FILE, logMessage);
-    } catch (e) {
-        console.error("Failed to write to debug log:", e);
-    }
-}
 
 function initFirebaseAdmin() {
     if (!admin.apps.length) {
-        logDebug("Attempting to initialize Firebase Admin...");
         const privateKey = process.env.FIREBASE_PRIVATE_KEY;
         const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
         const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
 
-        logDebug(`FIREBASE_PRIVATE_KEY present: ${!!privateKey}`);
-        logDebug(`FIREBASE_CLIENT_EMAIL present: ${!!clientEmail}`);
-        logDebug(`NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${projectId}`);
 
         if (!privateKey || !clientEmail || !projectId) {
             const missing = [];
@@ -34,14 +16,11 @@ function initFirebaseAdmin() {
 
             const msg = `CRITICAL: Missing credentials: ${missing.join(", ")}`;
             console.error(msg);
-            logDebug(msg);
             return false;
         }
 
         try {
             const formattedKey = privateKey.replace(/\\n/g, "\n").replace(/^"(.*)"$/, '$1');
-            logDebug(`Formatted Key length: ${formattedKey.length}`);
-            logDebug(`Key starts with: ${formattedKey.substring(0, 30)}...`);
 
             admin.initializeApp({
                 credential: admin.credential.cert({
@@ -50,11 +29,9 @@ function initFirebaseAdmin() {
                     privateKey: formattedKey,
                 }),
             });
-            logDebug("Firebase Admin initialized successfully.");
             return true;
         } catch (error: any) {
-            logDebug(`Firebase Admin Init Error: ${error.message}`);
-            logDebug(`Error Stack: ${error.stack}`);
+            console.error("Firebase Admin initialization failed", error instanceof Error ? error.message : "unknown error");
             return false;
         }
     }
