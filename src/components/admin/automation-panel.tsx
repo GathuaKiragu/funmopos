@@ -151,8 +151,6 @@ export default function AutomationPanel() {
         try {
             const res = await fetch(`/api/admin/detect-wins`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ secret: "DEVELOPMENT_TOKEN" })
             });
             const data = await res.json();
             if (res.ok) {
